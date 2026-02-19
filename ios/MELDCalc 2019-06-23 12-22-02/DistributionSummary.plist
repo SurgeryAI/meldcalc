@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Runner.ipa</key>
+	<array>
+		<dict>
+			<key>architectures</key>
+			<array>
+				<string>armv7</string>
+				<string>arm64</string>
+			</array>
+			<key>certificate</key>
+			<dict>
+				<key>SHA1</key>
+				<string>D14BA656981CAB88777DA50EB1E704E63297F307</string>
+				<key>dateExpires</key>
+				<string>6/18/20</string>
+				<key>type</key>
+				<string>iOS Development</string>
+			</dict>
+			<key>embeddedBinaries</key>
+			<array>
+				<dict>
+					<key>architectures</key>
+					<array>
+						<string>armv7</string>
+						<string>arm64</string>
+					</array>
+					<key>certificate</key>
+					<dict>
+						<key>SHA1</key>
+						<string>D14BA656981CAB88777DA50EB1E704E63297F307</string>
+						<key>dateExpires</key>
+						<string>6/18/20</string>
+						<key>type</key>
+						<string>iOS Development</string>
+					</dict>
+					<key>name</key>
+					<string>App.framework</string>
+					<key>team</key>
+					<dict>
+						<key>id</key>
+						<string>C3U5S48E88</string>
+						<key>name</key>
+						<string>Marc Melcher</string>
+					</dict>
+				</dict>
+				<dict>
+					<key>architectures</key>
+					<array>
+						<string>armv7</string>
+						<string>arm64</string>
+					</array>
+					<key>certificate</key>
+					<dict>
+						<key>SHA1</key>
+						<string>D14BA656981CAB88777DA50EB1E704E63297F307</string>
+						<key>dateExpires</key>
+						<string>6/18/20</string>
+						<key>type</key>
+						<string>iOS Development</string>
+					</dict>
+					<key>name</key>
+					<string>Flutter.framework</string>
+					<key>team</key>
+					<dict>
+						<key>id</key>
+						<string>C3U5S48E88</string>
+						<key>name</key>
+						<string>Marc Melcher</string>
+					</dict>
+				</dict>
+			</array>
+			<key>entitlements</key>
+			<dict>
+				<key>application-identifier</key>
+				<string>68H3D83S4E.com.bookmarc.meldcalculator</string>
+				<key>com.apple.developer.team-identifier</key>
+				<string>C3U5S48E88</string>
+				<key>get-task-allow</key>
+				<true/>
+				<key>keychain-access-groups</key>
+				<array>
+					<string>68H3D83S4E.com.bookmarc.meldcalculator</string>
+				</array>
+			</dict>
+			<key>name</key>
+			<string>Runner.app</string>
+			<key>profile</key>
+			<dict>
+				<key>UUID</key>
+				<string>cd970bb9-cf97-483f-b68d-3706d1992aab</string>
+				<key>name</key>
+				<string>iOS Team Provisioning Profile: *</string>
+			</dict>
+			<key>team</key>
+			<dict>
+				<key>id</key>
+				<string>C3U5S48E88</string>
+				<key>name</key>
+				<string>Marc Melcher</string>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>
