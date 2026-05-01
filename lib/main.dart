@@ -292,10 +292,13 @@ class _MyHomePageState extends State<MyHomePage> {
 
     meld3 = meld3Double.round();
 
-    // Survival predictions based on PMC8608337
+    // Survival predictions based on PMC8608337 (Kim et al. 2021, Table 4)
     // Model: Survival(t) = S0(t) ^ exp(0.18 * (MELD3.0 − 10))
-    // TODO: verify the 60-day (0.99138) and 90-day (0.99086) S0 baseline values
-    // against the source paper; the two are nearly identical which is suspicious.
+    // S0 values represent baseline cumulative survival at reference MELD3.0 = 10.
+    // TODO: verify S0(60d)=0.99138 and S0(90d)=0.99086 against Table 4 of PMC8608337.
+    // The two differ by only 0.00052, yielding nearly identical 60-day and 90-day
+    // predictions (e.g. 94.9% vs 94.6% at MELD 20), which is clinically implausible.
+    // Expected difference should be comparable to the 30d→60d drop of ~0.00563.
     final riskFactor = exp(0.18 * (meld3Double - 10));
     survival30 = pow(0.99701, riskFactor) * 100;
     survival60 = pow(0.99138, riskFactor) * 100;
@@ -537,7 +540,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   child: _buildToggleItem(
                     context,
                     'Dialysis',
-                    '≥2×/wk or CRRT',
+                    '2x/wk or CRRT',
                     dialysis,
                     (val) => setState(() {
                       dialysis = val;
@@ -574,7 +577,7 @@ class _MyHomePageState extends State<MyHomePage> {
               crossAxisCount: 2,
               mainAxisSpacing: 6,
               crossAxisSpacing: 10,
-              // Feature: slightly taller cells to accommodate range hint text
+              // Taller than default to accommodate field label + range hint text
               childAspectRatio: 2.2,
               children: [
                 _buildInputField(context, 'Creatinine', 'Cr mg/dL',
