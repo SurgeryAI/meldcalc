@@ -178,29 +178,22 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   bool _isCurrentValueInRange() {
-    const fieldRanges = [
-      (key: 'na', min: 120.0, max: 160.0),
-      (key: 'cr', min: 0.5, max: 20.0),
-      (key: 'tb', min: 0.1, max: 80.0),
-      (key: 'inr', min: 0.5, max: 20.0),
-      (key: 'alb', min: 1.5, max: 6.0),
+    final fields = [
+      (node: focusNodeNa, controller: myControllerNa, min: 120.0, max: 160.0),
+      (node: focusNodeCr, controller: myControllerCr, min: 0.5, max: 20.0),
+      (node: focusNodeTB, controller: myControllerTB, min: 0.1, max: 80.0),
+      (node: focusNodeINR, controller: myControllerINR, min: 0.5, max: 20.0),
+      (node: focusNodeAlb, controller: myControllerAlb, min: 1.5, max: 6.0),
     ];
-    final nodeMap = {
-      'na': (node: focusNodeNa, controller: myControllerNa),
-      'cr': (node: focusNodeCr, controller: myControllerCr),
-      'tb': (node: focusNodeTB, controller: myControllerTB),
-      'inr': (node: focusNodeINR, controller: myControllerINR),
-      'alb': (node: focusNodeAlb, controller: myControllerAlb),
-    };
-    for (final range in fieldRanges) {
-      final entry = nodeMap[range.key]!;
-      if (entry.node.hasFocus) {
-        final value = double.tryParse(entry.controller.text);
+    for (final field in fields) {
+      if (field.node.hasFocus) {
+        final value = double.tryParse(field.controller.text);
         if (value == null) return false;
-        return value >= range.min && value <= range.max;
+        return value >= field.min && value <= field.max;
       }
     }
-    return true;
+    // No field is focused: keyboard is already dismissed, nothing to do.
+    return false;
   }
 
   // Feature: reset all fields to defaults
