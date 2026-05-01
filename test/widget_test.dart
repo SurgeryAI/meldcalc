@@ -13,13 +13,13 @@ import 'package:meldcalc/main.dart';
 void main() {
   testWidgets('App starts and shows title', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(MyApp());
+    await tester.pumpWidget(const MyApp());
 
     // Verify that the title is present.
-    expect(find.text('MELD 3.0 Calc'), findsOneWidget);
+    expect(find.text('MELD 3.0 Calculator'), findsOneWidget);
 
-    // Verify that some lab values are present (default values).
+    // Verify that lab field labels are present.
     expect(find.text('Cr mg/dL'), findsOneWidget);
-    expect(find.text('Bilirubin mg/dl'), findsOneWidget);
+    expect(find.text('TB mg/dL'), findsOneWidget);
   });
 }
