@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
 import 'dart:async';
 
@@ -124,6 +125,48 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
     _setupListeners();
     _calculateMELD();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showDisclaimerIfNeeded());
+  }
+
+  Future<void> _showDisclaimerIfNeeded() async {
+    final prefs = await SharedPreferences.getInstance();
+    final shown = prefs.getBool('disclaimer_shown') ?? false;
+    if (!shown && mounted) {
+      await prefs.setBool('disclaimer_shown', true);
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          final cs = Theme.of(ctx).colorScheme;
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Icon(CupertinoIcons.exclamationmark_triangle_fill,
+                    color: Colors.orange, size: 24),
+                const SizedBox(width: 10),
+                const Text('Important Disclaimer'),
+              ],
+            ),
+            content: Text(
+              'This app is intended for educational and reference purposes only.\n\n'
+              'It is NOT a clinical tool and must NOT be used to make decisions '
+              'about patient care, diagnosis, or treatment.\n\n'
+              'Always consult current institutional protocols and qualified '
+              'healthcare professionals for patient management.',
+              style: TextStyle(fontSize: 14, color: cs.onSurface, height: 1.5),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('I Understand'),
+              ),
+            ],
+          );
+        },
+      );
+    }
   }
 
   void _setupListeners() {
@@ -170,9 +213,30 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _startInactivityTimer() {
     inactivityTimer?.cancel();
-    inactivityTimer = Timer(const Duration(seconds: 8), () {
-      FocusManager.instance.primaryFocus?.unfocus();
+    inactivityTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (_isCurrentValueInRange()) {
+        FocusManager.instance.primaryFocus?.unfocus();
+      }
     });
+  }
+
+  bool _isCurrentValueInRange() {
+    final fields = [
+      (node: focusNodeNa, controller: myControllerNa, min: 120.0, max: 160.0),
+      (node: focusNodeCr, controller: myControllerCr, min: 0.5, max: 20.0),
+      (node: focusNodeTB, controller: myControllerTB, min: 0.1, max: 80.0),
+      (node: focusNodeINR, controller: myControllerINR, min: 0.5, max: 20.0),
+      (node: focusNodeAlb, controller: myControllerAlb, min: 1.5, max: 6.0),
+    ];
+    for (final field in fields) {
+      if (field.node.hasFocus) {
+        final value = double.tryParse(field.controller.text);
+        if (value == null) return false;
+        return value >= field.min && value <= field.max;
+      }
+    }
+    // No field is focused: keyboard is already dismissed, nothing to do.
+    return false;
   }
 
   // Feature: reset all fields to defaults
@@ -366,19 +430,22 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _buildResultsSection(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-            child: _buildResultCard(context, 'Orig MELD', meld, Colors.blueGrey)),
-        const SizedBox(width: 8),
-        Expanded(
-            child: _buildResultCard(context, 'Na-MELD', nameld, Colors.indigo)),
-        const SizedBox(width: 8),
-        Expanded(
-            child: _buildResultCard(
-                context, 'MELD 3.0', meld3, const Color(0xFF007AFF),
-                showInterpretation: true)),
-      ],
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+              child: _buildResultCard(context, 'Orig MELD', meld, Colors.blueGrey)),
+          const SizedBox(width: 8),
+          Expanded(
+              child: _buildResultCard(context, 'Na-MELD', nameld, Colors.indigo)),
+          const SizedBox(width: 8),
+          Expanded(
+              child: _buildResultCard(
+                  context, 'MELD 3.0', meld3, const Color(0xFF007AFF),
+                  showInterpretation: true)),
+        ],
+      ),
     );
   }
 
@@ -464,12 +531,15 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       child: Column(
         children: [
-          Text(
-            'PREDICTED SURVIVAL & MORTALITY (MELD 3.0)',
-            style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: cs.onSurfaceVariant),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              'PREDICTED SURVIVAL & MORTALITY (MELD 3.0)',
+              style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: cs.onSurfaceVariant),
+            ),
           ),
           const SizedBox(height: 10),
           // Feature: each column shows survival + mortality together
@@ -713,6 +783,30 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
+  Widget _buildReference(ColorScheme cs,
+      {required String label, required String citation}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: cs.onSurface),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          citation,
+          style: TextStyle(
+              fontSize: 13,
+              color: cs.onSurfaceVariant,
+              fontStyle: FontStyle.italic),
+        ),
+      ],
+    );
+  }
+
   void _showInfoDialog() {
     showModalBottomSheet(
       context: context,
@@ -722,66 +816,100 @@ class _MyHomePageState extends State<MyHomePage> {
         final cs = Theme.of(context).colorScheme;
         final cardColor =
             Theme.of(context).cardTheme.color ?? cs.surfaceContainerLow;
-        return Container(
-          decoration: BoxDecoration(
-            color: cardColor,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(30)),
-          ),
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: cs.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.92,
+          expand: false,
+          builder: (_, scrollController) => Container(
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(30)),
+            ),
+            padding: const EdgeInsets.fromLTRB(32, 16, 32, 32),
+            child: SingleChildScrollView(
+              controller: scrollController,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const _LiverLogo(size: 40),
-                  const SizedBox(width: 12),
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: cs.outlineVariant,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      const _LiverLogo(size: 40),
+                      const SizedBox(width: 12),
+                      Text(
+                        'MELD 3.0 Calculator',
+                        style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: cs.onSurface),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   Text(
-                    'MELD 3.0 Calculator',
+                    'References',
                     style: TextStyle(
-                        fontSize: 24,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: cs.onSurface),
                   ),
+                  const SizedBox(height: 12),
+                  _buildReference(
+                    cs,
+                    label: 'Original MELD',
+                    citation:
+                        'Kamath PS, Wiesner RH, Malinchoc M, et al. '
+                        'A model to predict survival in patients with end-stage liver disease. '
+                        'Hepatology. 2001;33(2):464-470. '
+                        'doi: 10.1053/jhep.2001.22172. PMID: 11172350.',
+                  ),
+                  const SizedBox(height: 10),
+                  _buildReference(
+                    cs,
+                    label: 'MELD-Na (Na-MELD)',
+                    citation:
+                        'Kim WR, Biggins SW, Kremers WK, et al. '
+                        'Hyponatremia and Mortality among Patients on the Liver-Transplant Waiting List. '
+                        'N Engl J Med. 2008;359(10):1018-1026. '
+                        'doi: 10.1056/NEJMoa0801209. PMID: 18768945.',
+                  ),
+                  const SizedBox(height: 10),
+                  _buildReference(
+                    cs,
+                    label: 'MELD 3.0',
+                    citation:
+                        'Kim WR, Mannalithara A, Heimbach JK, Kamath PS, Asrani SK, '
+                        'Biggins SW, Wood NL, Gentry SE, Kwong AJ. '
+                        'MELD 3.0: The Model for End-stage Liver Disease Updated for the Modern Era. '
+                        'Gastroenterology. 2021 Sep 2:S0016-5085(21)03469-7. '
+                        'doi: 10.1053/j.gastro.2021.08.050. PMID: 34481845.',
+                  ),
+                  const SizedBox(height: 24),
+                  Divider(color: cs.outlineVariant),
+                  const SizedBox(height: 16),
+                  Text(
+                    'App built by Marc Melcher, MD, PhD.',
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: cs.onSurface),
+                  ),
+                  const SizedBox(height: 40),
                 ],
               ),
-              const SizedBox(height: 16),
-              Text(
-                'This calculator is based on the following reference:',
-                style: TextStyle(fontSize: 16, color: cs.onSurface),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Kim WR, Mannalithara A, Heimbach JK, Kamath PS, Asrani SK, Biggins SW, Wood NL, Gentry SE, Kwong AJ. MELD 3.0: The Model for End-stage Liver Disease Updated for the Modern Era. Gastroenterology. 2021 Sep 2:S0016-5085(21)03469-7. doi: 10.1053/j.gastro.2021.08.050. Epub ahead of print. PMID: 34481845.',
-                style: TextStyle(
-                    fontSize: 14,
-                    color: cs.onSurfaceVariant,
-                    fontStyle: FontStyle.italic),
-              ),
-              const SizedBox(height: 24),
-              Divider(color: cs.outlineVariant),
-              const SizedBox(height: 16),
-              Text(
-                'App built by Marc Melcher, MD, PhD.',
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: cs.onSurface),
-              ),
-              const SizedBox(height: 40),
-            ],
+            ),
           ),
         );
       },
