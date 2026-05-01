@@ -170,9 +170,37 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _startInactivityTimer() {
     inactivityTimer?.cancel();
-    inactivityTimer = Timer(const Duration(seconds: 8), () {
-      FocusManager.instance.primaryFocus?.unfocus();
+    inactivityTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (_isCurrentValueInRange()) {
+        FocusManager.instance.primaryFocus?.unfocus();
+      }
     });
+  }
+
+  bool _isCurrentValueInRange() {
+    const fieldRanges = [
+      (key: 'na', min: 120.0, max: 160.0),
+      (key: 'cr', min: 0.5, max: 20.0),
+      (key: 'tb', min: 0.1, max: 80.0),
+      (key: 'inr', min: 0.5, max: 20.0),
+      (key: 'alb', min: 1.5, max: 6.0),
+    ];
+    final nodeMap = {
+      'na': (node: focusNodeNa, controller: myControllerNa),
+      'cr': (node: focusNodeCr, controller: myControllerCr),
+      'tb': (node: focusNodeTB, controller: myControllerTB),
+      'inr': (node: focusNodeINR, controller: myControllerINR),
+      'alb': (node: focusNodeAlb, controller: myControllerAlb),
+    };
+    for (final range in fieldRanges) {
+      final entry = nodeMap[range.key]!;
+      if (entry.node.hasFocus) {
+        final value = double.tryParse(entry.controller.text);
+        if (value == null) return false;
+        return value >= range.min && value <= range.max;
+      }
+    }
+    return true;
   }
 
   // Feature: reset all fields to defaults
@@ -366,19 +394,22 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _buildResultsSection(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-            child: _buildResultCard(context, 'Orig MELD', meld, Colors.blueGrey)),
-        const SizedBox(width: 8),
-        Expanded(
-            child: _buildResultCard(context, 'Na-MELD', nameld, Colors.indigo)),
-        const SizedBox(width: 8),
-        Expanded(
-            child: _buildResultCard(
-                context, 'MELD 3.0', meld3, const Color(0xFF007AFF),
-                showInterpretation: true)),
-      ],
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+              child: _buildResultCard(context, 'Orig MELD', meld, Colors.blueGrey)),
+          const SizedBox(width: 8),
+          Expanded(
+              child: _buildResultCard(context, 'Na-MELD', nameld, Colors.indigo)),
+          const SizedBox(width: 8),
+          Expanded(
+              child: _buildResultCard(
+                  context, 'MELD 3.0', meld3, const Color(0xFF007AFF),
+                  showInterpretation: true)),
+        ],
+      ),
     );
   }
 
@@ -464,12 +495,15 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       child: Column(
         children: [
-          Text(
-            'PREDICTED SURVIVAL & MORTALITY (MELD 3.0)',
-            style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: cs.onSurfaceVariant),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              'PREDICTED SURVIVAL & MORTALITY (MELD 3.0)',
+              style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: cs.onSurfaceVariant),
+            ),
           ),
           const SizedBox(height: 10),
           // Feature: each column shows survival + mortality together
