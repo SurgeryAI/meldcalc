@@ -58,7 +58,7 @@ class MyApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      home: const MyHomePage(title: 'MELD 3.0 Calculator'),
+      home: const MyHomePage(title: 'MELD 3.0 Calc'),
     );
   }
 }
@@ -377,7 +377,7 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         title: Row(
           children: [
-            const _LiverLogo(size: 26),
+            //const _LiverLogo(size: 26),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
