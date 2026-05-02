@@ -28,6 +28,7 @@ dependencies:
   shared_preferences: ^2.3.0
 
 dev_dependencies:
+  flutter_native_splash: ^2.4.7
   flutter_test:
     sdk: flutter
 
@@ -73,3 +74,14 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/custom-fonts/#from-packages
+
+flutter_native_splash:
+  color: "#F2F2F7"
+  color_dark: "#1C1C1E"
+  image: "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png"
+  image_dark: "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png"
+  android_12:
+    image: "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png"
+    image_dark: "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png"
+    color: "#F2F2F7"
+    color_dark: "#1C1C1E"

@@ -377,9 +377,16 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         title: Row(
           children: [
-            const _LiverLogo(size: 32),
-            const SizedBox(width: 10),
-            Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
+            const _LiverLogo(size: 26),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                widget.title,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         backgroundColor: Colors.transparent,
@@ -846,14 +853,18 @@ class _MyHomePageState extends State<MyHomePage> {
                   const SizedBox(height: 24),
                   Row(
                     children: [
-                      const _LiverLogo(size: 40),
-                      const SizedBox(width: 12),
-                      Text(
-                        'MELD 3.0 Calculator',
-                        style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: cs.onSurface),
+                      const _LiverLogo(size: 28),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'MELD 3.0 Calculator',
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: cs.onSurface),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
