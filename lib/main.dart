@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:math';
+import 'package:meldcalc/models/meld_calculator.dart';
 import 'dart:async';
 
 Future<void> main() async {
@@ -74,17 +74,26 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   Timer? inactivityTimer;
 
-  // Results
-  int nameld = 0;
-  int meld = 0;
-  int meld3 = 0;
-  double meldDouble = 0;
-  double meld3Double = 0;
+  // Results calculated via MeldCalculator model
+  MeldResult _result = const MeldResult(
+    meld: 0,
+    nameld: 0,
+    meld3: 0,
+    meldDouble: 0,
+    meld3Double: 0,
+    survival30: 0,
+    survival60: 0,
+    survival90: 0,
+  );
 
-  // Survival Predicted (%)
-  double survival30 = 0;
-  double survival60 = 0;
-  double survival90 = 0;
+  int get meld => _result.meld;
+  int get nameld => _result.nameld;
+  int get meld3 => _result.meld3;
+  double get meldDouble => _result.meldDouble;
+  double get meld3Double => _result.meld3Double;
+  double get survival30 => _result.survival30;
+  double get survival60 => _result.survival60;
+  double get survival90 => _result.survival90;
 
   // State
   bool dialysis = false;
@@ -299,74 +308,23 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _calculateMELD() {
     double tryParse(String text, String fallback) {
-      if (text.isEmpty) return double.parse(fallback);
-      return double.tryParse(text) ?? double.parse(fallback);
+      if (text.isEmpty) return double.tryParse(fallback) ?? 1.0;
+      final val = double.tryParse(text);
+      if (val == null || !val.isFinite) {
+        return double.tryParse(fallback) ?? 1.0;
+      }
+      return val;
     }
 
-    double cr = tryParse(myControllerCr.text, crTemp);
-    double inr = tryParse(myControllerINR.text, inrTemp);
-    double tb = tryParse(myControllerTB.text, tbTemp);
-    double na = tryParse(myControllerNa.text, naTemp);
-    double alb = tryParse(myControllerAlb.text, albTemp);
-
-    double cr3 = cr;
-
-    // Apply clinical constraints
-    if (dialysis) {
-      cr = 4.0;
-      cr3 = 3.0;
-    }
-
-    if (cr > 4.0) cr = 4.0;
-    if (cr3 > 3.0) cr3 = 3.0;
-    if (cr < 1.0) {
-      cr = 1.0;
-      cr3 = 1.0;
-    }
-
-    if (tb < 1.0) tb = 1.0;
-    if (inr < 1.0) inr = 1.0;
-
-    if (na < 125) na = 125;
-    if (na > 137) na = 137;
-
-    // Bug fix: clamp albumin to physiologically plausible range so extreme
-    // entries (e.g. alb = 10) do not push MELD 3.0 below its minimum.
-    if (alb < 1.0) alb = 1.0;
-    if (alb > 6.0) alb = 6.0;
-
-    // Original MELD
-    meldDouble = (3.78 * (log(tb)) + 11.20 * (log(inr)) + 9.57 * (log(cr)) + 6.43);
-    meld = meldDouble.round();
-
-    // Na-MELD
-    nameld = (meldDouble + 1.32 * (137 - na) - (0.033 * meldDouble * (137 - na))).round();
-
-    // MELD 3.0 (Kim et al. Gastroenterology 2021)
-    meld3Double = (4.56 * log(tb) + 0.82 * (137 - na) - 0.24 * (137 - na) * log(tb) +
-        9.09 * log(inr) + 11.14 * log(cr3) + 1.85 * (3.5 - alb) -
-        1.83 * (3.5 - alb) * log(cr3) + 6);
-
-    if (female) {
-      meld3Double += 1.33;
-    }
-
-    // Enforce OPTN minimum score floor of 6
-    if (meld3Double < 6) meld3Double = 6;
-
-    meld3 = meld3Double.round();
-
-    // Survival predictions based on PMC8608337 (Kim et al. 2021, Table 4)
-    // Model: Survival(t) = S0(t) ^ exp(0.18 * (MELD3.0 − 10))
-    // S0 values represent baseline cumulative survival at reference MELD3.0 = 10.
-    // TODO: verify S0(60d)=0.99138 and S0(90d)=0.99086 against Table 4 of PMC8608337.
-    // The two differ by only 0.00052, yielding nearly identical 60-day and 90-day
-    // predictions (e.g. 94.9% vs 94.6% at MELD 20), which is clinically implausible.
-    // Expected difference should be comparable to the 30d→60d drop of ~0.00563.
-    final riskFactor = exp(0.18 * (meld3Double - 10));
-    survival30 = pow(0.99701, riskFactor) * 100;
-    survival60 = pow(0.99138, riskFactor) * 100;
-    survival90 = pow(0.99086, riskFactor) * 100;
+    _result = MeldCalculator.calculate(
+      cr: tryParse(myControllerCr.text, crTemp),
+      inr: tryParse(myControllerINR.text, inrTemp),
+      tb: tryParse(myControllerTB.text, tbTemp),
+      na: tryParse(myControllerNa.text, naTemp),
+      alb: tryParse(myControllerAlb.text, albTemp),
+      dialysis: dialysis,
+      female: female,
+    );
   }
 
   @override
