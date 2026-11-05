@@ -16,7 +16,7 @@ void main() {
     await tester.pumpWidget(const MyApp());
 
     // Verify that the title is present.
-    expect(find.text('MELD 3.0 Calculator'), findsOneWidget);
+    expect(find.text('MELD 3.0 Calc'), findsOneWidget);
 
     // Verify that lab field labels are present.
     expect(find.text('Cr mg/dL'), findsOneWidget);
