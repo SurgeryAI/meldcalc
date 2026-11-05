@@ -3,10 +3,14 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:upgrader/upgrader.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:http/http.dart' as http;
 import 'package:meldcalc/models/meld_calculator.dart';
 import 'package:meldcalc/services/mmat_data_service.dart';
 import 'package:meldcalc/views/mmat_heatmap_view.dart';
 import 'dart:async';
+import 'dart:convert';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,9 +67,12 @@ class MyApp extends StatelessWidget {
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
       home: UpgradeAlert(
+        dialogStyle: UpgradeDialogStyle.cupertino,
         upgrader: upgrader ??
             Upgrader(
-              durationUntilAlertAgain: const Duration(days: 1),
+              durationUntilAlertAgain: Duration.zero,
+              countryCode: 'US',
+              debugLogging: true,
             ),
         barrierDismissible: true,
         showLater: true,
@@ -970,6 +977,58 @@ class _MyHomePageState extends State<MyHomePage> {
                     ],
                   ),
                   const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF007AFF).withAlpha(12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF007AFF).withAlpha(35)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Version 3.0.1  •  MMaT Cohort',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: cs.onSurface),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${MmatDataService.instance.cohortYearRange} (${MmatDataService.instance.donorHospitalCount} donor hospitals)',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: cs.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.tonalIcon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _checkForUpdatesDialog(context);
+                          },
+                          icon: const Icon(CupertinoIcons.arrow_clockwise, size: 13),
+                          label: const Text('Check Updates',
+                              style: TextStyle(
+                                  fontSize: 11, fontWeight: FontWeight.w600)),
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   Text(
                     'References',
                     style: TextStyle(
@@ -1034,6 +1093,153 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _checkForUpdatesDialog(BuildContext context) async {
+    final cs = Theme.of(context).colorScheme;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Checking for App Store & OPTN MMaT updates...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 1. Check OPTN MMaT GitHub Sync
+    final mmatResult =
+        await MmatDataService.instance.checkForUpdates(force: true);
+
+    // 2. Check App Store version
+    String? appStoreVersion;
+    String? trackViewUrl;
+    String? releaseNotes;
+    try {
+      final info = await PackageInfo.fromPlatform();
+      final bundleId = info.packageName.isNotEmpty
+          ? info.packageName
+          : 'com.bookmarc.meldcalculator';
+      final response = await http
+          .get(Uri.parse(
+              'https://itunes.apple.com/lookup?bundleId=$bundleId&country=US'))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['resultCount'] > 0) {
+          appStoreVersion = data['results'][0]['version'];
+          trackViewUrl = data['results'][0]['trackViewUrl'];
+          releaseNotes = data['results'][0]['releaseNotes'];
+        }
+      }
+    } catch (_) {}
+
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+
+    final isNewerApp = appStoreVersion != null && appStoreVersion != '3.0.1';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(CupertinoIcons.arrow_clockwise_circle_fill,
+                color: Color(0xFF007AFF), size: 24),
+            SizedBox(width: 8),
+            Text('Updates Status'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'OPTN MMaT Dataset:',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: cs.onSurface),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              mmatResult.message,
+              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'App Version:',
+              style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: cs.onSurface),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              isNewerApp
+                  ? 'New version available: v$appStoreVersion (Installed: v3.0.1)'
+                  : 'Installed: v3.0.1 (Up to date)',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight:
+                      isNewerApp ? FontWeight.bold : FontWeight.normal,
+                  color: isNewerApp
+                      ? const Color(0xFF007AFF)
+                      : cs.onSurfaceVariant),
+            ),
+            if (isNewerApp && releaseNotes != null && releaseNotes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest.withAlpha(100),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  releaseNotes,
+                  style: TextStyle(
+                      fontSize: 11, color: cs.onSurfaceVariant),
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          if (trackViewUrl != null)
+            FilledButton(
+              onPressed: () async {
+                final uri = Uri.parse(trackViewUrl!);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri,
+                      mode: LaunchMode.externalApplication);
+                }
+              },
+              child: const Text('Update on App Store'),
+            ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _loadHomeCenter();
+            },
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 }

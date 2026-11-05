@@ -35,11 +35,11 @@ class MmatManifest {
       cohortEndDate: json['cohort_end_date']?.toString() ?? '08/31/2026',
       donorHospitalCount: (json['donor_hospital_count'] as num?)?.toInt() ?? 5887,
       manifestUrl: json['manifest_url']?.toString() ??
-          'https://raw.githubusercontent.com/SurgeryAI/meld3/master/assets/mmat_manifest.json',
+          'https://raw.githubusercontent.com/SurgeryAI/meldcalc/main/assets/mmat_manifest.json',
       csvUrl: json['csv_url']?.toString() ??
-          'https://raw.githubusercontent.com/SurgeryAI/meld3/master/assets/mmat_data.csv',
+          'https://raw.githubusercontent.com/SurgeryAI/meldcalc/main/assets/mmat_data.csv',
       coordinatesUrl: json['coordinates_url']?.toString() ??
-          'https://raw.githubusercontent.com/SurgeryAI/meld3/master/assets/mmat_coordinates.json',
+          'https://raw.githubusercontent.com/SurgeryAI/meldcalc/main/assets/mmat_coordinates.json',
       lastUpdated: json['last_updated']?.toString() ?? '',
     );
   }
@@ -128,7 +128,7 @@ class MmatDataService {
   static final MmatDataService instance = MmatDataService._();
 
   static const String _defaultRemoteManifestUrl =
-      'https://raw.githubusercontent.com/SurgeryAI/meld3/master/assets/mmat_manifest.json';
+      'https://raw.githubusercontent.com/SurgeryAI/meldcalc/main/assets/mmat_manifest.json';
   static const String _prefSavedCenterCode = 'user_home_hospital_code';
   static const String _prefActiveVersionKey = 'mmat_active_cohort_version';
 
@@ -165,6 +165,10 @@ class MmatDataService {
     final e = cohortEndDate.split('/').last;
     return '$b–$e';
   }
+
+  /// Total donor hospitals in the active cohort.
+  int get donorHospitalCount =>
+      _activeManifest?.donorHospitalCount ?? _cachedHospitals?.length ?? 5887;
 
   /// Active cohort version tag (e.g. "2025.09").
   String get activeCohortVersion => _activeManifest?.cohortVersion ?? '2025.09';
@@ -272,9 +276,9 @@ class MmatDataService {
         cohortEndDate: '08/31/2026',
         donorHospitalCount: 5887,
         manifestUrl: _defaultRemoteManifestUrl,
-        csvUrl: 'https://raw.githubusercontent.com/SurgeryAI/meld3/master/assets/mmat_data.csv',
+        csvUrl: 'https://raw.githubusercontent.com/SurgeryAI/meldcalc/main/assets/mmat_data.csv',
         coordinatesUrl:
-            'https://raw.githubusercontent.com/SurgeryAI/meld3/master/assets/mmat_coordinates.json',
+            'https://raw.githubusercontent.com/SurgeryAI/meldcalc/main/assets/mmat_coordinates.json',
         lastUpdated: '',
       );
     }
