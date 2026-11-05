@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:upgrader/upgrader.dart';
 import 'package:meldcalc/models/meld_calculator.dart';
+import 'package:meldcalc/services/mmat_data_service.dart';
+import 'package:meldcalc/views/mmat_heatmap_view.dart';
 import 'dart:async';
 
 Future<void> main() async {
@@ -18,7 +21,8 @@ Future<void> main() async {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final Upgrader? upgrader;
+  const MyApp({super.key, this.upgrader});
 
   static const _seedColor = Color(0xFF007AFF);
 
@@ -58,7 +62,16 @@ class MyApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       theme: _buildTheme(Brightness.light),
       darkTheme: _buildTheme(Brightness.dark),
-      home: const MyHomePage(title: 'MELD 3.0 Calc'),
+      home: UpgradeAlert(
+        upgrader: upgrader ??
+            Upgrader(
+              durationUntilAlertAgain: const Duration(days: 1),
+            ),
+        barrierDismissible: true,
+        showLater: true,
+        showIgnore: true,
+        child: const MyHomePage(title: 'MELD 3.0 Calculator'),
+      ),
     );
   }
 }
@@ -129,12 +142,61 @@ class _MyHomePageState extends State<MyHomePage> {
     'alb': '3.5',
   };
 
+  // User's Home Transplant Center (persisted)
+  MmatHospital? _homeCenter;
+
   @override
   void initState() {
     super.initState();
     _setupListeners();
     _calculateMELD();
+    _loadHomeCenter();
+    _triggerMmatSync();
     WidgetsBinding.instance.addPostFrameCallback((_) => _showDisclaimerIfNeeded());
+  }
+
+  void _triggerMmatSync() {
+    MmatDataService.instance.syncInBackground().then((_) {
+      if (mounted) {
+        _loadHomeCenter();
+      }
+    });
+  }
+
+  Future<void> _loadHomeCenter() async {
+    final center = await MmatDataService.instance.getSavedCenter();
+    if (mounted) {
+      setState(() => _homeCenter = center);
+    }
+  }
+
+  void _openMmatMap() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MmatHeatmapView(
+          patientScore: meld3,
+          initialHospitalCode: _homeCenter?.code,
+        ),
+      ),
+    );
+    _loadHomeCenter();
+  }
+
+  void _showCenterPicker() async {
+    final hospitals = await MmatDataService.instance.loadHospitals();
+    if (!mounted) return;
+    showSearch(
+      context: context,
+      delegate: _HospitalPickerSearchDelegate(
+        hospitals: hospitals,
+        currentCode: _homeCenter?.code,
+        onSelected: (h) async {
+          await MmatDataService.instance.saveCenter(h);
+          _loadHomeCenter();
+        },
+      ),
+    );
   }
 
   Future<void> _showDisclaimerIfNeeded() async {
@@ -335,7 +397,7 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         title: Row(
           children: [
-            //const _LiverLogo(size: 26),
+            const _LiverLogo(size: 26),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -351,6 +413,13 @@ class _MyHomePageState extends State<MyHomePage> {
         elevation: 0,
         centerTitle: false,
         actions: [
+          // Regional MMaT Heatmap button
+          IconButton(
+            onPressed: _openMmatMap,
+            icon: const Icon(CupertinoIcons.map,
+                color: Color(0xFF007AFF), size: 24.0),
+            tooltip: 'Regional MMaT Heatmap',
+          ),
           // Feature: reset button
           IconButton(
             onPressed: _resetValues,
@@ -377,6 +446,8 @@ class _MyHomePageState extends State<MyHomePage> {
               const SizedBox(height: 8),
               _buildSurvivalSection(context),
               const SizedBox(height: 10),
+              _buildMmatSection(context),
+              const SizedBox(height: 10),
               _buildInputSection(context),
               const SizedBox(height: 6),
               Center(
@@ -390,6 +461,127 @@ class _MyHomePageState extends State<MyHomePage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildMmatSection(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final cardColor =
+        Theme.of(context).cardTheme.color ?? cs.surfaceContainerLow;
+    final mmat = _homeCenter?.medianMeld ?? 33;
+    final delta = meld3 - mmat;
+    final isCompetitive = delta >= 0;
+    final exceptionScore = mmat - 3;
+    final statusColor =
+        isCompetitive ? const Color(0xFF34C759) : const Color(0xFF007AFF);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outlineVariant.withAlpha(60)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF007AFF).withAlpha(25),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(CupertinoIcons.placemark_fill,
+                    size: 16, color: Color(0xFF007AFF)),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _homeCenter?.name ?? 'National Median MMaT',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      _homeCenter != null
+                          ? '${_homeCenter!.city}, ${_homeCenter!.state} • OPTN 150 NM Cohort'
+                          : 'Tap to select home transplant center',
+                      style:
+                          TextStyle(fontSize: 10, color: cs.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: _showCenterPicker,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+                child: const Text('Change',
+                    style:
+                        TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: statusColor.withAlpha(18),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: statusColor.withAlpha(60)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Local MMaT: $mmat  |  Patient MELD 3.0: $meld3',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: statusColor),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        isCompetitive
+                            ? 'Patient score meets/exceeds local MMaT. Competitive for standard organ allocation.'
+                            : 'Patient is ${delta.abs()} pts below local MMaT ($mmat). Std Exception benchmark (MMaT − 3): $exceptionScore.',
+                        style: TextStyle(
+                            fontSize: 10, color: cs.onSurface.withAlpha(180)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonalIcon(
+                  onPressed: _openMmatMap,
+                  icon: const Icon(CupertinoIcons.map_fill, size: 14),
+                  label: const Text('Heatmap',
+                      style:
+                          TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -679,7 +871,7 @@ class _MyHomePageState extends State<MyHomePage> {
                     child: Switch(
                       value: value,
                       onChanged: onChanged,
-                      activeColor: activeColor,
+                      activeThumbColor: activeColor,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                   ),
@@ -865,6 +1057,15 @@ class _MyHomePageState extends State<MyHomePage> {
                         'Gastroenterology. 2021 Sep 2:S0016-5085(21)03469-7. '
                         'doi: 10.1053/j.gastro.2021.08.050. PMID: 34481845.',
                   ),
+                  const SizedBox(height: 10),
+                  _buildReference(
+                    cs,
+                    label: 'Regional MMaT (OPTN Policy)',
+                    citation:
+                        'Organ Procurement and Transplantation Network (OPTN). '
+                        'Median MELD at Transplant (MMaT) by Donor Hospital Cohort (150 Nautical Miles). '
+                        'Updated semi-annually per OPTN liver allocation policy.',
+                  ),
                   const SizedBox(height: 24),
                   Divider(color: cs.outlineVariant),
                   const SizedBox(height: 16),
@@ -952,4 +1153,81 @@ class _LiverPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _HospitalPickerSearchDelegate extends SearchDelegate<MmatHospital?> {
+  final List<MmatHospital> hospitals;
+  final String? currentCode;
+  final ValueChanged<MmatHospital> onSelected;
+
+  _HospitalPickerSearchDelegate({
+    required this.hospitals,
+    this.currentCode,
+    required this.onSelected,
+  }) : super(searchFieldLabel: 'Search hospital, city, or state...');
+
+  @override
+  List<Widget>? buildActions(BuildContext context) => [
+        if (query.isNotEmpty)
+          IconButton(icon: const Icon(Icons.clear), onPressed: () => query = ''),
+      ];
+
+  @override
+  Widget? buildLeading(BuildContext context) => IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () => close(context, null),
+      );
+
+  @override
+  Widget buildResults(BuildContext context) => _buildList(context);
+
+  @override
+  Widget buildSuggestions(BuildContext context) => _buildList(context);
+
+  Widget _buildList(BuildContext context) {
+    final q = query.trim().toLowerCase();
+    final results = q.isEmpty
+        ? hospitals.take(25).toList()
+        : hospitals
+            .where((h) =>
+                h.name.toLowerCase().contains(q) ||
+                h.city.toLowerCase().contains(q) ||
+                h.state.toLowerCase() == q ||
+                h.code.toLowerCase().contains(q))
+            .take(50)
+            .toList();
+
+    return ListView.builder(
+      itemCount: results.length,
+      itemBuilder: (ctx, i) {
+        final h = results[i];
+        final isCurrent = h.code == currentCode;
+        final color = MmatHeatmapView.getScoreColor(h.medianMeld);
+
+        return ListTile(
+          dense: true,
+          leading: isCurrent
+              ? const Icon(Icons.star, color: Colors.amber, size: 22)
+              : const Icon(Icons.local_hospital_outlined, size: 22),
+          title: Text(h.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text('${h.city}, ${h.state} • Code: ${h.code}'),
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withAlpha(30),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              'MMaT ${h.medianMeld}',
+              style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 12),
+            ),
+          ),
+          onTap: () {
+            close(context, h);
+            onSelected(h);
+          },
+        );
+      },
+    );
+  }
 }

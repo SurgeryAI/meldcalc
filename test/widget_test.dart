@@ -5,18 +5,48 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:upgrader/upgrader.dart';
 import 'package:meldcalc/main.dart';
 
 void main() {
-  testWidgets('App starts and shows title', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('App starts and shows title and MMaT benchmark', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({'disclaimer_shown': true});
+
+    final testUpgrader = Upgrader(
+      client: MockClient((_) async => http.Response(jsonEncode({'resultCount': 0, 'results': []}), 200)),
+      upgraderOS: MockUpgraderOS(ios: true),
+    )..installPackageInfo(
+        packageInfo: PackageInfo(
+          appName: 'MELD 3.0 Calc',
+          packageName: 'com.bookmarc.meldcalculator',
+          version: '1.0.0',
+          buildNumber: '1',
+        ),
+      );
+
+    // Build our app with testUpgrader and trigger frames
+    await tester.pumpWidget(MyApp(upgrader: testUpgrader));
+    await tester.pumpAndSettle();
 
     // Verify that the title is present.
-    expect(find.text('MELD 3.0 Calc'), findsOneWidget);
+    expect(find.text('MELD 3.0 Calculator'), findsOneWidget);
+
+    // Verify score headers
+    expect(find.text('Orig MELD'), findsOneWidget);
+    expect(find.text('Na-MELD'), findsOneWidget);
+    expect(find.text('MELD 3.0'), findsOneWidget);
+
+    // Verify that survival card is present
+    expect(find.textContaining('PREDICTED SURVIVAL'), findsOneWidget);
+
+    // Verify that MMaT benchmark section is present
+    expect(find.textContaining('MMaT'), findsWidgets);
 
     // Verify that lab field labels are present.
     expect(find.text('Cr mg/dL'), findsOneWidget);

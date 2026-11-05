@@ -1,0 +1,10 @@
+{
+  "cohort_version": "2025.09",
+  "cohort_begin_date": "09/01/2025",
+  "cohort_end_date": "08/31/2026",
+  "donor_hospital_count": 5887,
+  "manifest_url": "https://raw.githubusercontent.com/SurgeryAI/meld3/master/assets/mmat_manifest.json",
+  "csv_url": "https://raw.githubusercontent.com/SurgeryAI/meld3/master/assets/mmat_data.csv",
+  "coordinates_url": "https://raw.githubusercontent.com/SurgeryAI/meld3/master/assets/mmat_coordinates.json",
+  "last_updated": "2026-11-05T12:00:00Z"
+}
