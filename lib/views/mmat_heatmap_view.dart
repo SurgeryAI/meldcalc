@@ -19,15 +19,15 @@ class MmatHeatmapView extends StatefulWidget {
   /// Temperature color scale: hotter colors represent higher MMaT scores
   static Color getScoreColor(int score) {
     if (score >= 34) {
-      return const Color(0xFFD32F2F); // Deep Crimson
+      return const Color(0xFFC62828); // Crimson Red (34+)
     } else if (score >= 32) {
-      return const Color(0xFFE64A19); // Fiery Coral
-    } else if (score >= 30) {
-      return const Color(0xFFFFA000); // Amber Yellow
-    } else if (score >= 28) {
-      return const Color(0xFF00897B); // Medical Teal
+      return const Color(0xFFFF7043); // Coral / Orange (32-33)
+    } else if (score == 31) {
+      return const Color(0xFFFBC02D); // Gold / Yellow (31 National Median)
+    } else if (score == 30) {
+      return const Color(0xFF00897B); // Medical Teal (30)
     } else {
-      return const Color(0xFF1976D2); // Cool Blue
+      return const Color(0xFF1976D2); // Cool Blue (<= 29)
     }
   }
 
@@ -67,7 +67,7 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   @override
   void initState() {
     super.initState();
-    _patientCompareMode = widget.patientScore != null;
+    _patientCompareMode = false;
     _loadData();
   }
 
@@ -121,15 +121,15 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   /// Temperature color scale: hotter colors represent higher MMaT scores
   static Color getScoreColor(int score) {
     if (score >= 34) {
-      return const Color(0xFFD32F2F); // Deep Crimson
+      return const Color(0xFFC62828); // Crimson Red (34+)
     } else if (score >= 32) {
-      return const Color(0xFFE64A19); // Fiery Coral
-    } else if (score >= 30) {
-      return const Color(0xFFFFA000); // Amber Yellow
-    } else if (score >= 28) {
-      return const Color(0xFF00897B); // Medical Teal
+      return const Color(0xFFFF7043); // Coral / Orange (32-33)
+    } else if (score == 31) {
+      return const Color(0xFFFBC02D); // Gold / Yellow (31 National Median)
+    } else if (score == 30) {
+      return const Color(0xFF00897B); // Medical Teal (30)
     } else {
-      return const Color(0xFF1976D2); // Cool Blue
+      return const Color(0xFF1976D2); // Cool Blue (<= 29)
     }
   }
 
@@ -820,11 +820,11 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
             ),
             if (_isLegendExpanded) ...[
               const SizedBox(height: 6),
-              _buildLegendRow('≥ 34', 'Very High', const Color(0xFFD32F2F)),
-              _buildLegendRow('32–33', 'High', const Color(0xFFE64A19)),
-              _buildLegendRow('30–31', 'National Avg', const Color(0xFFFFA000)),
-              _buildLegendRow('28–29', 'Moderate', const Color(0xFF00897B)),
-              _buildLegendRow('< 28', 'Lower', const Color(0xFF1976D2)),
+              _buildLegendRow('≥ 34', 'Very High', const Color(0xFFC62828)),
+              _buildLegendRow('32–33', 'High', const Color(0xFFFF7043)),
+              _buildLegendRow('31', 'National Median', const Color(0xFFFBC02D)),
+              _buildLegendRow('30', 'Moderate', const Color(0xFF00897B)),
+              _buildLegendRow('< 30', 'Lower', const Color(0xFF1976D2)),
               const SizedBox(height: 4),
               Text(
                 'Radius: 150 NM',

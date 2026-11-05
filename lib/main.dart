@@ -443,13 +443,13 @@ class _MyHomePageState extends State<MyHomePage> {
             children: [
               const SizedBox(height: 2),
               _buildResultsSection(context),
-              const SizedBox(height: 8),
-              _buildSurvivalSection(context),
-              const SizedBox(height: 10),
-              _buildMmatSection(context),
-              const SizedBox(height: 10),
-              _buildInputSection(context),
               const SizedBox(height: 6),
+              _buildSurvivalSection(context),
+              const SizedBox(height: 6),
+              _buildMmatSection(context),
+              const SizedBox(height: 6),
+              _buildInputSection(context),
+              const SizedBox(height: 4),
               Center(
                 child: Text(
                   'Calculations adjust based on current clinical standards.',
@@ -457,7 +457,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   textAlign: TextAlign.center,
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
             ],
           ),
         ),
@@ -467,115 +467,66 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Widget _buildMmatSection(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final cardColor =
-        Theme.of(context).cardTheme.color ?? cs.surfaceContainerLow;
-    final mmat = _homeCenter?.medianMeld ?? 33;
+    final mmat = _homeCenter?.medianMeld ?? 31;
+    final centerLabel = _homeCenter != null
+        ? '${_homeCenter!.city}, ${_homeCenter!.state}'
+        : 'National MMaT';
     final delta = meld3 - mmat;
-    final isCompetitive = delta >= 0;
-    final exceptionScore = mmat - 3;
-    final statusColor =
-        isCompetitive ? const Color(0xFF34C759) : const Color(0xFF007AFF);
+    final deltaStr = delta >= 0 ? '+$delta' : '$delta';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cs.outlineVariant.withAlpha(60)),
+        color: const Color(0xFF007AFF).withAlpha(14),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF007AFF).withAlpha(40)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF007AFF).withAlpha(25),
-                  borderRadius: BorderRadius.circular(8),
+          const Icon(CupertinoIcons.location_solid,
+              size: 13, color: Color(0xFF007AFF)),
+          const SizedBox(width: 5),
+          Expanded(
+            child: GestureDetector(
+              onTap: _showCenterPicker,
+              child: Text(
+                '$centerLabel: $mmat (diff $deltaStr) • Exc: ${mmat - 3}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF007AFF),
                 ),
-                child: const Icon(CupertinoIcons.placemark_fill,
-                    size: 16, color: Color(0xFF007AFF)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _homeCenter?.name ?? 'National Median MMaT',
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.bold),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      _homeCenter != null
-                          ? '${_homeCenter!.city}, ${_homeCenter!.state} • OPTN 150 NM Cohort'
-                          : 'Tap to select home transplant center',
-                      style:
-                          TextStyle(fontSize: 10, color: cs.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              TextButton(
-                onPressed: _showCenterPicker,
-                style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                ),
-                child: const Text('Change',
-                    style:
-                        TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: statusColor.withAlpha(18),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: statusColor.withAlpha(60)),
             ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: _showCenterPicker,
+            child: Text(
+              'Change',
+              style: TextStyle(
+                fontSize: 10,
+                color: cs.onSurfaceVariant.withAlpha(180),
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: _openMmatMap,
             child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Local MMaT: $mmat  |  Patient MELD 3.0: $meld3',
-                        style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: statusColor),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isCompetitive
-                            ? 'Patient score meets/exceeds local MMaT. Competitive for standard organ allocation.'
-                            : 'Patient is ${delta.abs()} pts below local MMaT ($mmat). Std Exception benchmark (MMaT − 3): $exceptionScore.',
-                        style: TextStyle(
-                            fontSize: 10, color: cs.onSurface.withAlpha(180)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.tonalIcon(
-                  onPressed: _openMmatMap,
-                  icon: const Icon(CupertinoIcons.map_fill, size: 14),
-                  label: const Text('Heatmap',
-                      style:
-                          TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(CupertinoIcons.map, size: 12, color: Color(0xFF007AFF)),
+                SizedBox(width: 2),
+                Text(
+                  'Map',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF007AFF),
                   ),
                 ),
               ],
