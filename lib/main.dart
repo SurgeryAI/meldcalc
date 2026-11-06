@@ -12,11 +12,10 @@ import 'package:meldcalc/services/mmat_data_service.dart';
 import 'package:meldcalc/views/mmat_heatmap_view.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations([
+  await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -26,15 +25,27 @@ void main() {
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final Upgrader? upgrader;
   const MyApp({super.key, this.upgrader});
 
-  static final Upgrader _defaultUpgrader = Upgrader(
-    durationUntilAlertAgain: const Duration(days: 1),
-    countryCode: 'US',
-    debugLogging: kDebugMode,
-  );
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final Upgrader _upgrader;
+
+  @override
+  void initState() {
+    super.initState();
+    _upgrader = widget.upgrader ??
+        Upgrader(
+          durationUntilAlertAgain: const Duration(days: 1),
+          countryCode: 'US',
+          debugLogging: kDebugMode,
+        );
+  }
 
   static const _seedColor = Color(0xFF007AFF);
 
@@ -76,7 +87,7 @@ class MyApp extends StatelessWidget {
       darkTheme: _buildTheme(Brightness.dark),
       home: UpgradeAlert(
         dialogStyle: UpgradeDialogStyle.cupertino,
-        upgrader: upgrader ?? _defaultUpgrader,
+        upgrader: _upgrader,
         barrierDismissible: true,
         showLater: true,
         showIgnore: true,
@@ -96,8 +107,6 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   Timer? inactivityTimer;
-  Timer? _warmupTimer;
-  Timer? _syncTimer;
 
   // Results calculated via MeldCalculator model
   MeldResult _result = const MeldResult(
@@ -159,29 +168,7 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
     _setupListeners();
     _calculateMELD();
-    _scheduleIdleTasks();
-  }
-
-  void _scheduleIdleTasks() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _showDisclaimerIfNeeded();
-
-      // Avoid background network/isolate timers during automated tests
-      if (Platform.environment.containsKey('FLUTTER_TEST')) return;
-
-      // Pre-warm MMaT dataset in background so map opens in 0ms when tapped
-      _warmupTimer = Timer(const Duration(milliseconds: 500), () {
-        if (!mounted) return;
-        MmatDataService.instance.preWarm();
-      });
-
-      // Background update check: only runs if >= 7 days since last check
-      _syncTimer = Timer(const Duration(seconds: 4), () {
-        if (!mounted) return;
-        MmatDataService.instance.syncInBackground();
-      });
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showDisclaimerIfNeeded());
   }
 
   void _openMmatMap() {
@@ -354,8 +341,6 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void dispose() {
     inactivityTimer?.cancel();
-    _warmupTimer?.cancel();
-    _syncTimer?.cancel();
     myControllerNa.dispose();
     myControllerINR.dispose();
     myControllerTB.dispose();

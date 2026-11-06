@@ -114,8 +114,11 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
             .get(Uri.parse('http://ip-api.com/json'))
             .timeout(const Duration(milliseconds: 1200));
         if (res.statusCode == 200) {
-          final data = jsonDecode(res.body) as Map<String, dynamic>;
-          if (data['status'] == 'success' && data['lat'] != null && data['lon'] != null) {
+          final data = jsonDecode(res.body);
+          if (data is Map<String, dynamic> &&
+              data['status'] == 'success' &&
+              data['lat'] != null &&
+              data['lon'] != null) {
             final lat = (data['lat'] as num).toDouble();
             final lng = (data['lon'] as num).toDouble();
             await prefs.setDouble('cached_user_lat', lat);

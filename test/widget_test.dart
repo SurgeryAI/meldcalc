@@ -117,4 +117,34 @@ void main() {
     expect(find.textContaining('Enter or select donor hospital'), findsNothing);
     expect(find.text('Donor Center MMaT'), findsNothing);
   });
+
+  testWidgets('App can be closed and reopened cleanly without lifecycle or initialization crashes', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({'disclaimer_shown': true});
+
+    Upgrader createUpgrader() => Upgrader(
+          client: MockClient((_) async => http.Response(jsonEncode({'resultCount': 0, 'results': []}), 200)),
+          upgraderOS: MockUpgraderOS(ios: true),
+        )..installPackageInfo(
+            packageInfo: PackageInfo(
+              appName: 'MELD 3.0 Calc',
+              packageName: 'com.bookmarc.meldcalculator',
+              version: '1.0.0',
+              buildNumber: '1',
+            ),
+          );
+
+    // First session: open app
+    await tester.pumpWidget(MyApp(upgrader: createUpgrader()));
+    await tester.pumpAndSettle();
+    expect(find.text('MELD 3.0 Calculator'), findsOneWidget);
+
+    // Close app (unmount widget tree)
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+
+    // Reopen app (mount fresh widget tree)
+    await tester.pumpWidget(MyApp(upgrader: createUpgrader()));
+    await tester.pumpAndSettle();
+    expect(find.text('MELD 3.0 Calculator'), findsOneWidget);
+  });
 }

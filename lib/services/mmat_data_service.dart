@@ -402,8 +402,10 @@ class MmatDataService {
         return;
       }
 
-      final res = await checkForUpdates();
+      // Record check attempt timestamp upfront so network errors/timeouts don't loop on every launch
       await prefs.setInt(_prefLastSyncCheckTime, nowMs);
+
+      final res = await checkForUpdates();
       if (res.updated) {
         debugPrint('[MmatDataService] Background sync applied: ${res.message}');
       }
