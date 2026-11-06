@@ -90,4 +90,31 @@ void main() {
     expect(find.text('.'), findsNothing);
     expect(find.widgetWithText(TextFormField, '1.0'), findsWidgets);
   });
+
+  testWidgets('MMaT benchmark card serves as streamlined link to heatmap without donor hospital entry', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({'disclaimer_shown': true});
+
+    final testUpgrader = Upgrader(
+      client: MockClient((_) async => http.Response(jsonEncode({'resultCount': 0, 'results': []}), 200)),
+      upgraderOS: MockUpgraderOS(ios: true),
+    )..installPackageInfo(
+        packageInfo: PackageInfo(
+          appName: 'MELD 3.0 Calc',
+          packageName: 'com.bookmarc.meldcalculator',
+          version: '1.0.0',
+          buildNumber: '1',
+        ),
+      );
+
+    await tester.pumpWidget(MyApp(upgrader: testUpgrader));
+    await tester.pumpAndSettle();
+
+    // Verify the card acts as a clean link to the MMaT Allocation Heatmap
+    expect(find.text('MMaT Allocation Heatmap'), findsOneWidget);
+    expect(find.text('Interactive'), findsOneWidget);
+
+    // Verify there is no donor hospital entry or selection on the card
+    expect(find.textContaining('Enter or select donor hospital'), findsNothing);
+    expect(find.text('Donor Center MMaT'), findsNothing);
+  });
 }

@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/mmat_data_service.dart';
 
 /// Interactive geographic heatmap & radius overlay view of the USA
@@ -67,13 +71,18 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   final TextEditingController _searchCtrl = TextEditingController();
 
   static const LatLng _usaCenter = LatLng(39.8283, -98.5795);
-  static const double _initialZoom = 4.2;
+  static const double _initialZoom = 5.5; // ~800-mile span across typical mobile viewport
+  static const double _usaOverviewZoom = 4.2;
   static const int _nationalMedian = 31;
+
+  LatLng _currentLocation = _usaCenter;
+  bool _hasLocation = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _initLocation();
   }
 
   @override
@@ -82,37 +91,91 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
     super.dispose();
   }
 
+  Future<void> _initLocation() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedLat = prefs.getDouble('cached_user_lat');
+      final cachedLng = prefs.getDouble('cached_user_lng');
+      if (cachedLat != null && cachedLng != null && mounted) {
+        setState(() {
+          _currentLocation = LatLng(cachedLat, cachedLng);
+          _hasLocation = true;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _centerOn800Miles(_currentLocation);
+        });
+      }
+
+      // Query IP location service for current location
+      final client = http.Client();
+      final res = await client
+          .get(Uri.parse('http://ip-api.com/json'))
+          .timeout(const Duration(milliseconds: 2500));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        if (data['status'] == 'success' && data['lat'] != null && data['lon'] != null) {
+          final lat = (data['lat'] as num).toDouble();
+          final lng = (data['lon'] as num).toDouble();
+          await prefs.setDouble('cached_user_lat', lat);
+          await prefs.setDouble('cached_user_lng', lng);
+          if (mounted) {
+            setState(() {
+              _currentLocation = LatLng(lat, lng);
+              _hasLocation = true;
+            });
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _centerOn800Miles(_currentLocation);
+            });
+          }
+        }
+      }
+    } catch (_) {
+      // Fallback: center on default USA location showing 800 miles
+      if (!_hasLocation && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _centerOn800Miles(_usaCenter);
+        });
+      }
+    }
+  }
+
+  void _centerOn800Miles(LatLng center) {
+    // 800 miles span = 400 miles radius from center
+    // 1 deg latitude ≈ 69.0 miles
+    final dLat = 400.0 / 69.0;
+    final cosLat = math.cos(center.latitude * math.pi / 180.0).abs();
+    final dLng = 400.0 / (69.0 * (cosLat > 0.1 ? cosLat : 1.0));
+    final bounds = LatLngBounds(
+      LatLng(center.latitude - dLat, center.longitude - dLng),
+      LatLng(center.latitude + dLat, center.longitude + dLng),
+    );
+    try {
+      _mapController.fitCamera(CameraFit.bounds(
+        bounds: bounds,
+        padding: const EdgeInsets.all(16),
+      ));
+    } catch (_) {
+      _mapController.move(center, _initialZoom);
+    }
+  }
+
   Future<void> _loadData() async {
     try {
       final hospitals = await _service.loadHospitals();
       final groups = await _service.loadLocationGroups();
-      final savedCenter = await _service.getSavedCenter();
 
       if (mounted) {
         setState(() {
           _allHospitals = hospitals;
           _allGroups = groups;
-          _savedCenterCode = savedCenter?.code;
           _isLoading = false;
         });
 
-        // Check if an initial hospital was requested or saved
-        final targetCode = widget.initialHospitalCode ?? _savedCenterCode;
-        if (targetCode != null) {
-          final target = hospitals.where((h) => h.code == targetCode).firstOrNull;
-          if (target != null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              _flyTo(target.latitude, target.longitude, 8.5);
-              final group = groups.where((g) =>
-                (g.latitude - target.latitude).abs() < 0.05 &&
-                (g.longitude - target.longitude).abs() < 0.05).firstOrNull;
-              if (group != null && mounted) {
-                setState(() => _selectedGroup = group);
-              }
-            });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _centerOn800Miles(_currentLocation);
           }
-        }
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -586,8 +649,8 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                     // The Map Canvas
                     FlutterMap(
                       mapController: _mapController,
-                      options: const MapOptions(
-                        initialCenter: _usaCenter,
+                      options: MapOptions(
+                        initialCenter: _currentLocation,
                         initialZoom: _initialZoom,
                         minZoom: 3.0,
                         maxZoom: 16.0,
@@ -667,6 +730,37 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                               );
                             }).toList(),
                           ),
+
+                        // Current Location Marker
+                        if (_hasLocation)
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: _currentLocation,
+                                width: 24,
+                                height: 24,
+                                child: Tooltip(
+                                  message: 'Current Location',
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF007AFF),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                          color: Colors.white, width: 2.5),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFF007AFF)
+                                              .withAlpha(120),
+                                          blurRadius: 8,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                       ],
                     ),
 
@@ -735,11 +829,21 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           FloatingActionButton.small(
-                            heroTag: 'recenter_usa',
-                            tooltip: 'Center USA',
-                            onPressed: () => _flyTo(
-                                _usaCenter.latitude, _usaCenter.longitude, _initialZoom),
+                            heroTag: 'recenter_loc',
+                            tooltip: 'Center Current Location (800 mi)',
+                            onPressed: () =>
+                                _centerOn800Miles(_currentLocation),
                             child: const Icon(Icons.my_location),
+                          ),
+                          const SizedBox(height: 8),
+                          FloatingActionButton.small(
+                            heroTag: 'recenter_usa',
+                            tooltip: 'Full USA View',
+                            onPressed: () => _flyTo(
+                                _usaCenter.latitude,
+                                _usaCenter.longitude,
+                                _usaOverviewZoom),
+                            child: const Icon(Icons.public),
                           ),
                           const SizedBox(height: 8),
                           FloatingActionButton.small(
