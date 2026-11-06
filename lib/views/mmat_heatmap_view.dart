@@ -71,7 +71,7 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   final TextEditingController _searchCtrl = TextEditingController();
 
   static const LatLng _usaCenter = LatLng(39.8283, -98.5795);
-  static const double _initialZoom = 5.5; // ~800-mile span across typical mobile viewport
+  static const double _initialZoom = 4.9; // ~1200-mile span across typical mobile viewport
   static const double _usaOverviewZoom = 4.2;
   static const int _nationalMedian = 31;
 
@@ -102,7 +102,7 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
           _hasLocation = true;
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _centerOn800Miles(_currentLocation);
+          if (mounted) _centerOn1200Miles(_currentLocation);
         });
         return; // Fast path: cached location used immediately with zero network delay
       }
@@ -126,7 +126,7 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                 _hasLocation = true;
               });
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) _centerOn800Miles(_currentLocation);
+                if (mounted) _centerOn1200Miles(_currentLocation);
               });
             }
           }
@@ -135,21 +135,21 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
         client.close();
       }
     } catch (_) {
-      // Fallback: center on default USA location showing 800 miles
+      // Fallback: center on default USA location showing 1200 miles
       if (!_hasLocation && mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _centerOn800Miles(_usaCenter);
+          if (mounted) _centerOn1200Miles(_usaCenter);
         });
       }
     }
   }
 
-  void _centerOn800Miles(LatLng center) {
-    // 800 miles span = 400 miles radius from center
+  void _centerOn1200Miles(LatLng center) {
+    // 1200 miles span = 600 miles radius from center
     // 1 deg latitude ≈ 69.0 miles
-    final dLat = 400.0 / 69.0;
+    final dLat = 600.0 / 69.0;
     final cosLat = math.cos(center.latitude * math.pi / 180.0).abs();
-    final dLng = 400.0 / (69.0 * (cosLat > 0.1 ? cosLat : 1.0));
+    final dLng = 600.0 / (69.0 * (cosLat > 0.1 ? cosLat : 1.0));
     final bounds = LatLngBounds(
       LatLng(center.latitude - dLat, center.longitude - dLng),
       LatLng(center.latitude + dLat, center.longitude + dLng),
@@ -178,7 +178,7 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            _centerOn800Miles(_currentLocation);
+            _centerOn1200Miles(_currentLocation);
           }
         });
       }
@@ -835,9 +835,9 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                         children: [
                           FloatingActionButton.small(
                             heroTag: 'recenter_loc',
-                            tooltip: 'Center Current Location (800 mi)',
+                            tooltip: 'Center Current Location (1200 mi)',
                             onPressed: () =>
-                                _centerOn800Miles(_currentLocation),
+                                _centerOn1200Miles(_currentLocation),
                             child: const Icon(Icons.my_location),
                           ),
                           const SizedBox(height: 8),
