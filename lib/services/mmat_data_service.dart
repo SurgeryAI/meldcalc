@@ -177,6 +177,17 @@ class MmatDataService {
   /// Whether active data is running from an updated remote cache rather than bundled initial asset.
   bool get isLiveSynced => _isLiveSynced;
 
+  /// Whether the dataset has already been loaded into memory.
+  bool get isLoaded => _cachedHospitals != null && _cachedGroups != null;
+
+  /// Pre-warms the MMaT dataset in the background so opening the map is instantaneous.
+  Future<void> preWarm() async {
+    if (isLoaded) return;
+    try {
+      await loadHospitals();
+    } catch (_) {}
+  }
+
   /// Loads and parses MMaT data from local cache or bundled assets.
   Future<List<MmatHospital>> loadHospitals({bool forceReload = false}) async {
     if (!forceReload && _cachedHospitals != null) {
@@ -377,10 +388,22 @@ class MmatDataService {
     }
   }
 
-  /// Fire-and-forget background check on app launch. Does not throw or block the main thread.
+  static const String _prefLastSyncCheckTime = 'mmat_last_sync_check_time';
+
+  /// Fire-and-forget background check. Runs at most once every 7 days in the background
+  /// to avoid unnecessary network traffic and CPU work on app launch.
   Future<void> syncInBackground() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastCheckMs = prefs.getInt(_prefLastSyncCheckTime) ?? 0;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      // Only check once a week in the background (MMaT changes semi-annually)
+      if (nowMs - lastCheckMs < const Duration(days: 7).inMilliseconds) {
+        return;
+      }
+
       final res = await checkForUpdates();
+      await prefs.setInt(_prefLastSyncCheckTime, nowMs);
       if (res.updated) {
         debugPrint('[MmatDataService] Background sync applied: ${res.message}');
       }

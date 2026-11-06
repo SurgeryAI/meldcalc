@@ -104,30 +104,35 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _centerOn800Miles(_currentLocation);
         });
+        return; // Fast path: cached location used immediately with zero network delay
       }
 
-      // Query IP location service for current location
+      // Query IP location service for current location only if not previously cached
       final client = http.Client();
-      final res = await client
-          .get(Uri.parse('http://ip-api.com/json'))
-          .timeout(const Duration(milliseconds: 2500));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        if (data['status'] == 'success' && data['lat'] != null && data['lon'] != null) {
-          final lat = (data['lat'] as num).toDouble();
-          final lng = (data['lon'] as num).toDouble();
-          await prefs.setDouble('cached_user_lat', lat);
-          await prefs.setDouble('cached_user_lng', lng);
-          if (mounted) {
-            setState(() {
-              _currentLocation = LatLng(lat, lng);
-              _hasLocation = true;
-            });
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _centerOn800Miles(_currentLocation);
-            });
+      try {
+        final res = await client
+            .get(Uri.parse('http://ip-api.com/json'))
+            .timeout(const Duration(milliseconds: 1200));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          if (data['status'] == 'success' && data['lat'] != null && data['lon'] != null) {
+            final lat = (data['lat'] as num).toDouble();
+            final lng = (data['lon'] as num).toDouble();
+            await prefs.setDouble('cached_user_lat', lat);
+            await prefs.setDouble('cached_user_lng', lng);
+            if (mounted) {
+              setState(() {
+                _currentLocation = LatLng(lat, lng);
+                _hasLocation = true;
+              });
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _centerOn800Miles(_currentLocation);
+              });
+            }
           }
         }
+      } finally {
+        client.close();
       }
     } catch (_) {
       // Fallback: center on default USA location showing 800 miles
