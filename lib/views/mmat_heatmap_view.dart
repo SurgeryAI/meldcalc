@@ -54,7 +54,6 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   // View toggles
   bool _showRadiuses = true;
   bool _showMarkers = true;
-  bool _patientCompareMode = false;
   int _scoreFilterMin = 0; // 0 = all
   bool _isLegendExpanded = true;
 
@@ -74,7 +73,6 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   @override
   void initState() {
     super.initState();
-    _patientCompareMode = false;
     _loadData();
   }
 
@@ -127,11 +125,6 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   }
 
   Color _getDisplayColor(int mmatScore) {
-    if (_patientCompareMode && widget.patientScore != null) {
-      return widget.patientScore! >= mmatScore
-          ? const Color(0xFF2E7D32) // Competitive (Green)
-          : const Color(0xFFE65100); // Below MMaT (Orange)
-    }
     return MmatHeatmapView.getScoreColor(mmatScore);
   }
 
@@ -258,58 +251,47 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                   ),
                   const SizedBox(height: 16),
                   const Divider(),
-                  if (widget.patientScore != null) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: (widget.patientScore! >= group.representativeScore
-                                ? Colors.green
-                                : Colors.orange)
-                            .withAlpha(25),
-                        border: Border.all(
-                          color: (widget.patientScore! >= group.representativeScore
-                                  ? Colors.green
-                                  : Colors.orange)
-                              .withAlpha(90),
-                        ),
-                        borderRadius: BorderRadius.circular(10),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8E44AD).withAlpha(16),
+                      border: Border.all(
+                        color: const Color(0xFF8E44AD).withAlpha(60),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.star_rounded,
+                          size: 20,
+                          color: Color(0xFF8E44AD),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                widget.patientScore! >= group.representativeScore
-                                    ? Icons.check_circle_outline
-                                    : Icons.warning_amber_rounded,
-                                size: 18,
-                                color: widget.patientScore! >= group.representativeScore
-                                    ? Colors.green
-                                    : Colors.orange.shade800,
-                              ),
-                              const SizedBox(width: 8),
                               Text(
-                                'Patient MELD 3.0: ${widget.patientScore}',
+                                'Standard Exception: ${group.representativeScore - 3}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13,
+                                  color: Color(0xFF8E44AD),
                                 ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Candidates with standard exception in this donor cohort receive MMaT − 3 (${group.representativeScore - 3}).',
+                                style: const TextStyle(fontSize: 11),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.patientScore! >= group.representativeScore
-                                ? 'Score is competitive (≥ local MMaT of ${group.representativeScore}) for standard allocation within 150 NM.'
-                                : 'Score is ${group.representativeScore - widget.patientScore!} points below local MMaT (${group.representativeScore}). Standard Exception benchmark (MMaT − 3) = ${group.representativeScore - 3}.',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     'Donor Hospitals in Cluster (${group.hospitals.length})',
@@ -697,18 +679,6 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
-                            if (widget.patientScore != null) ...[
-                              _buildFilterChip(
-                                label: 'Patient (${widget.patientScore}) vs MMaT',
-                                selected: _patientCompareMode,
-                                onSelected: (v) =>
-                                    setState(() => _patientCompareMode = v),
-                                badgeColor: _patientCompareMode
-                                    ? Colors.green
-                                    : Colors.grey,
-                              ),
-                              const SizedBox(width: 8),
-                            ],
                             _buildFilterChip(
                               label: 'All (${_allHospitals.length})',
                               selected: _scoreFilterMin == 0,
@@ -847,9 +817,9 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    _patientCompareMode ? 'Patient vs MMaT' : 'MMaT Legend',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  const Text(
+                    'MMaT Legend',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(width: 4),
                   Icon(
@@ -863,16 +833,11 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
             ),
             if (_isLegendExpanded) ...[
               const SizedBox(height: 6),
-              if (_patientCompareMode && widget.patientScore != null) ...[
-                _buildLegendRow('≥ MMaT', 'Competitive (≥ ${widget.patientScore})', const Color(0xFF2E7D32)),
-                _buildLegendRow('< MMaT', 'Below MMaT (< ${widget.patientScore})', const Color(0xFFE65100)),
-              ] else ...[
-                _buildLegendRow('≥ 34', 'Very High', const Color(0xFFC62828)),
-                _buildLegendRow('32–33', 'High', const Color(0xFFFF7043)),
-                _buildLegendRow('31', 'National Median', const Color(0xFFFBC02D)),
-                _buildLegendRow('30', 'Moderate', const Color(0xFF00897B)),
-                _buildLegendRow('< 30', 'Lower', const Color(0xFF1976D2)),
-              ],
+              _buildLegendRow('≥ 34', 'Very High', const Color(0xFFC62828)),
+              _buildLegendRow('32–33', 'High', const Color(0xFFFF7043)),
+              _buildLegendRow('31', 'National Median', const Color(0xFFFBC02D)),
+              _buildLegendRow('30', 'Moderate', const Color(0xFF00897B)),
+              _buildLegendRow('< 30', 'Lower', const Color(0xFF1976D2)),
               const SizedBox(height: 4),
               Text(
                 'Radius: 150 NM',

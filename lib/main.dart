@@ -411,9 +411,10 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       backgroundColor: cs.surface,
       appBar: AppBar(
+        titleSpacing: 16,
         title: Text(
           widget.title,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -421,24 +422,27 @@ class _MyHomePageState extends State<MyHomePage> {
         actions: [
           // Regional MMaT Heatmap button
           IconButton(
+            visualDensity: VisualDensity.compact,
             onPressed: _openMmatMap,
             icon: const Icon(CupertinoIcons.map,
-                color: Color(0xFF007AFF), size: 24.0),
+                color: Color(0xFF007AFF), size: 22.0),
             tooltip: 'Regional MMaT Heatmap',
           ),
           // Feature: reset button
           IconButton(
+            visualDensity: VisualDensity.compact,
             onPressed: _resetValues,
             icon: Icon(CupertinoIcons.arrow_counterclockwise,
-                color: cs.onSurfaceVariant, size: 22.0),
+                color: cs.onSurfaceVariant, size: 20.0),
             tooltip: 'Reset',
           ),
           IconButton(
+            visualDensity: VisualDensity.compact,
             onPressed: _showInfoDialog,
             icon: const Icon(CupertinoIcons.info_circle_fill,
-                color: Color(0xFF007AFF), size: 28.0),
+                color: Color(0xFF007AFF), size: 24.0),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
         ],
       ),
       body: SafeArea(
@@ -509,72 +513,31 @@ class _MyHomePageState extends State<MyHomePage> {
             // Header Row: Title & Map button
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF007AFF).withAlpha(22),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    CupertinoIcons.building_2_fill,
-                    size: 16,
-                    color: Color(0xFF007AFF),
-                  ),
+                const Icon(
+                  CupertinoIcons.building_2_fill,
+                  size: 17,
+                  color: Color(0xFF007AFF),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Text(
-                            'Donor Center MMaT',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: hasCenter
-                                  ? const Color(0xFF2E7D32).withAlpha(25)
-                                  : cs.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              hasCenter ? 'Local Cohort' : 'National Default',
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                                color: hasCenter
-                                    ? const Color(0xFF2E7D32)
-                                    : cs.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Text(
-                        '150 NM donor cohort benchmark for liver allocation',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: cs.onSurfaceVariant.withAlpha(180),
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    hasCenter ? 'Donor Center MMaT' : 'National MMaT Benchmark',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                const SizedBox(width: 8),
                 // Regional Heatmap Button
                 InkWell(
                   onTap: _openMmatMap,
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: const Color(0xFF007AFF).withAlpha(16),
                       borderRadius: BorderRadius.circular(8),
