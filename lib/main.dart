@@ -1240,8 +1240,10 @@ class _MyHomePageState extends State<MyHomePage> {
                         const SizedBox(width: 8),
                         FilledButton.tonalIcon(
                           onPressed: () {
-                            Navigator.pop(context);
-                            _checkForUpdatesDialog(context);
+                            Navigator.of(context).pop();
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (mounted) _checkForUpdatesDialog();
+                            });
                           },
                           icon: const Icon(CupertinoIcons.arrow_clockwise, size: 13),
                           label: const Text('Check Updates',
@@ -1325,62 +1327,106 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Future<void> _checkForUpdatesDialog(BuildContext context) async {
+  Future<void> _checkForUpdatesDialog() async {
+    if (!mounted) return;
     final cs = Theme.of(context).colorScheme;
-    showDialog(
+
+    BuildContext? loadingDialogContext;
+    showDialog<void>(
       context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(
-        child: Card(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 16),
-                Text('Checking for App Store & OPTN MMaT updates...'),
-              ],
+      barrierDismissible: true,
+      builder: (dialogCtx) {
+        loadingDialogContext = dialogCtx;
+        return const Center(
+          child: Card(
+            elevation: 8,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(16)),
+            ),
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Checking for updates...',
+                      style: TextStyle(fontWeight: FontWeight.w500)),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
 
-    // 1. Check OPTN MMaT GitHub Sync
-    final mmatResult =
-        await MmatDataService.instance.checkForUpdates(force: true);
-
-    // 2. Check App Store version
+    MmatSyncResult mmatResult = MmatSyncResult(
+      success: true,
+      updated: false,
+      message:
+          'MMaT dataset is active (${MmatDataService.instance.cohortYearRange}).',
+      activeCohortVersion: MmatDataService.instance.activeCohortVersion,
+    );
     String? appStoreVersion;
     String? trackViewUrl;
     String? releaseNotes;
     String installedVersion = '3.3.0';
-    try {
-      final info = await PackageInfo.fromPlatform();
-      installedVersion = info.version.isNotEmpty ? info.version : '3.3.0';
-      final bundleId = 'com.bookmarc.meldcalculator';
-      final response = await http
-          .get(Uri.parse(
-              'https://itunes.apple.com/lookup?bundleId=$bundleId&country=US'))
-          .timeout(const Duration(seconds: 5));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['resultCount'] > 0) {
-          appStoreVersion = data['results'][0]['version'];
-          trackViewUrl = data['results'][0]['trackViewUrl'];
-          releaseNotes = data['results'][0]['releaseNotes'];
-        }
-      }
-    } catch (_) {}
 
-    if (!context.mounted) return;
-    Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+    try {
+      // 1. Check OPTN MMaT GitHub Sync with timeout (force: false)
+      try {
+        mmatResult = await MmatDataService.instance
+            .checkForUpdates(force: false)
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        mmatResult = MmatSyncResult(
+          success: false,
+          updated: false,
+          message: 'Unable to reach MMaT server (offline or timed out).',
+          activeCohortVersion: MmatDataService.instance.activeCohortVersion,
+        );
+      }
+
+      // 2. Check App Store version
+      try {
+        final info = await PackageInfo.fromPlatform()
+            .timeout(const Duration(seconds: 3));
+        installedVersion = info.version.isNotEmpty ? info.version : '3.3.0';
+      } catch (_) {}
+
+      try {
+        final bundleId = 'com.bookmarc.meldcalculator';
+        final response = await http
+            .get(Uri.parse(
+                'https://itunes.apple.com/lookup?bundleId=$bundleId&country=US'))
+            .timeout(const Duration(seconds: 4));
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          if (data is Map &&
+              data['resultCount'] != null &&
+              (data['resultCount'] as int) > 0) {
+            final results = data['results'] as List?;
+            if (results != null && results.isNotEmpty) {
+              appStoreVersion = results[0]['version'] as String?;
+              trackViewUrl = results[0]['trackViewUrl'] as String?;
+              releaseNotes = results[0]['releaseNotes'] as String?;
+            }
+          }
+        }
+      } catch (_) {}
+    } finally {
+      // Safely dismiss the loading dialog regardless of errors or timeouts
+      if (loadingDialogContext != null && loadingDialogContext!.mounted) {
+        Navigator.of(loadingDialogContext!).pop();
+      }
+    }
+
+    if (!mounted) return;
 
     final isNewerApp = appStoreVersion != null &&
         MmatDataService.isVersionNewer(appStoreVersion, installedVersion);
 
-    showDialog(
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape:
@@ -1430,7 +1476,9 @@ class _MyHomePageState extends State<MyHomePage> {
                       ? const Color(0xFF007AFF)
                       : cs.onSurfaceVariant),
             ),
-            if (isNewerApp && releaseNotes != null && releaseNotes.isNotEmpty) ...[
+            if (isNewerApp &&
+                releaseNotes != null &&
+                releaseNotes.isNotEmpty) ...[
               const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.all(8),
@@ -1450,7 +1498,7 @@ class _MyHomePageState extends State<MyHomePage> {
           ],
         ),
         actions: [
-          if (trackViewUrl != null)
+          if (isNewerApp && trackViewUrl != null)
             FilledButton(
               onPressed: () async {
                 final uri = Uri.parse(trackViewUrl!);
