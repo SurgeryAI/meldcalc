@@ -1,24 +1,18 @@
-import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../config/map_tiles_config.dart';
 import '../services/mmat_data_service.dart';
 
 /// Interactive geographic heatmap & radius overlay view of the USA
 /// displaying Median MELD at Transplant (MMaT) scores based on the
 /// OPTN 150-nautical-mile donor hospital calculation radius.
 class MmatHeatmapView extends StatefulWidget {
-  final int? patientScore;
-  final String? initialHospitalCode;
-
-  const MmatHeatmapView({
-    super.key,
-    this.patientScore,
-    this.initialHospitalCode,
-  });
+  const MmatHeatmapView({super.key});
 
   /// Temperature color scale: hotter colors represent higher MMaT scores
   static Color getScoreColor(int score) {
@@ -43,12 +37,8 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   final MapController _mapController = MapController();
   final MmatDataService _service = MmatDataService.instance;
 
-  // Google Maps tile configuration
-  static const String _googleMapsApiKey =
-      String.fromEnvironment('GOOGLE_MAPS_API_KEY', defaultValue: '');
-
-  // Google Maps layer type: 'm' = Roadmap, 'p' = Terrain, 'y' = Hybrid (Satellite + labels)
-  String _mapType = 'm';
+  // Basemap style (CARTO / OpenStreetMap). See lib/config/map_tiles_config.dart.
+  BasemapStyle _basemapStyle = BasemapStyle.auto;
 
   List<MmatHospital> _allHospitals = [];
   List<MmatLocationGroup> _allGroups = [];
@@ -61,9 +51,6 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   int _scoreFilterMin = 0; // 0 = all
   bool _isLegendExpanded = true;
 
-  // User's saved home transplant center code
-  String? _savedCenterCode;
-
   // Selected item for bottom sheet / detail card
   MmatLocationGroup? _selectedGroup;
 
@@ -75,8 +62,22 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   static const double _usaOverviewZoom = 4.2;
   static const int _nationalMedian = 31;
 
+  // Last device position, kept only in local preferences so the map can open
+  // on the user's region immediately. It is never sent anywhere.
+  static const String _prefLastLat = 'last_device_lat';
+  static const String _prefLastLng = 'last_device_lng';
+  static const String _prefLocationPrompted = 'location_permission_prompted';
+  // Keys used by earlier builds for an IP-derived position.
+  static const List<String> _legacyLocationKeys = [
+    'cached_user_lat',
+    'cached_user_lng',
+  ];
+
   LatLng _currentLocation = _usaCenter;
   bool _hasLocation = false;
+  bool _mapReady = false;
+  bool _userMovedMap = false;
+  bool _locating = false;
 
   @override
   void initState() {
@@ -91,63 +92,166 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
     super.dispose();
   }
 
+  // ── Device location ────────────────────────────────────────────────────────
+
   Future<void> _initLocation() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final cachedLat = prefs.getDouble('cached_user_lat');
-      final cachedLng = prefs.getDouble('cached_user_lng');
-      if (cachedLat != null && cachedLng != null && mounted) {
-        setState(() {
-          _currentLocation = LatLng(cachedLat, cachedLng);
-          _hasLocation = true;
-        });
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _centerOn1200Miles(_currentLocation);
-        });
-        return; // Fast path: cached location used immediately with zero network delay
+      for (final key in _legacyLocationKeys) {
+        await prefs.remove(key);
       }
 
-      // Query IP location service for current location only if not previously cached
-      final client = http.Client();
-      try {
-        final res = await client
-            .get(Uri.parse('http://ip-api.com/json'))
-            .timeout(const Duration(milliseconds: 1200));
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body);
-          if (data is Map<String, dynamic> &&
-              data['status'] == 'success' &&
-              data['lat'] != null &&
-              data['lon'] != null) {
-            final lat = (data['lat'] as num).toDouble();
-            final lng = (data['lon'] as num).toDouble();
-            await prefs.setDouble('cached_user_lat', lat);
-            await prefs.setDouble('cached_user_lng', lng);
-            if (mounted) {
-              setState(() {
-                _currentLocation = LatLng(lat, lng);
-                _hasLocation = true;
-              });
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) _centerOn1200Miles(_currentLocation);
-              });
-            }
-          }
-        }
-      } finally {
-        client.close();
+      // Fast path: if permission is already granted, open on the last known
+      // position while a fresh fix is obtained.
+      final permission = await Geolocator.checkPermission();
+      final lat = prefs.getDouble(_prefLastLat);
+      final lng = prefs.getDouble(_prefLastLng);
+      if (_isGranted(permission) && lat != null && lng != null && mounted) {
+        setState(() {
+          _currentLocation = LatLng(lat, lng);
+          _hasLocation = true;
+        });
+        _recenter();
       }
     } catch (_) {
-      // Fallback: center on default USA location showing 1200 miles
-      if (!_hasLocation && mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _centerOn1200Miles(_usaCenter);
-        });
+      // Preferences or the location plugin unavailable: keep the US overview.
+    }
+    await _updateDeviceLocation(userInitiated: false);
+  }
+
+  static bool _isGranted(LocationPermission p) =>
+      p == LocationPermission.whileInUse || p == LocationPermission.always;
+
+  /// Gets the device position through the platform location service.
+  ///
+  /// When [userInitiated] is false (map opening) the system permission prompt
+  /// is shown at most once; after that, declining is respected silently and
+  /// the map stays on the national overview. When the user taps the
+  /// location button, they are prompted again where the OS allows it, or
+  /// offered a shortcut to Settings.
+  Future<void> _updateDeviceLocation({required bool userInitiated}) async {
+    if (_locating) return;
+    _locating = true;
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        if (userInitiated) {
+          _showLocationMessage(
+            'Location Services are turned off. Turn them on in Settings to center the map on your area.',
+            offerSettings: true,
+          );
+        }
+        _fallBackToOverview();
+        return;
       }
+
+      final prefs = await SharedPreferences.getInstance();
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied &&
+          (userInitiated || !(prefs.getBool(_prefLocationPrompted) ?? false))) {
+        await prefs.setBool(_prefLocationPrompted, true);
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (!_isGranted(permission)) {
+        await prefs.remove(_prefLastLat);
+        await prefs.remove(_prefLastLng);
+        if (mounted && _hasLocation) setState(() => _hasLocation = false);
+        if (userInitiated) {
+          _showLocationMessage(
+            'Location access is off for this app. You can allow it in Settings.',
+            offerSettings: permission == LocationPermission.deniedForever,
+          );
+        }
+        _fallBackToOverview();
+        return;
+      }
+
+      Position? position;
+      try {
+        // City-level accuracy is plenty for a 1,200-mile regional view and
+        // resolves quickly.
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.low,
+            timeLimit: Duration(seconds: 10),
+          ),
+        );
+      } catch (_) {
+        position = await Geolocator.getLastKnownPosition();
+      }
+
+      if (position == null) {
+        if (userInitiated) {
+          _showLocationMessage('Your location could not be determined right now.');
+        }
+        _fallBackToOverview();
+        return;
+      }
+
+      final here = LatLng(position.latitude, position.longitude);
+      await prefs.setDouble(_prefLastLat, here.latitude);
+      await prefs.setDouble(_prefLastLng, here.longitude);
+      if (!mounted) return;
+      setState(() {
+        _currentLocation = here;
+        _hasLocation = true;
+      });
+      // Don't yank the map away from a region the user has panned to.
+      if (userInitiated || !_userMovedMap) _recenter();
+    } catch (_) {
+      if (userInitiated) {
+        _showLocationMessage('Your location could not be determined right now.');
+      }
+      _fallBackToOverview();
+    } finally {
+      _locating = false;
+    }
+  }
+
+  Future<void> _onMyLocationPressed() async {
+    _userMovedMap = false;
+    if (_hasLocation) _recenter();
+    await _updateDeviceLocation(userInitiated: true);
+  }
+
+  void _fallBackToOverview() {
+    if (!_hasLocation && !_userMovedMap) _recenter();
+  }
+
+  void _showLocationMessage(String message, {bool offerSettings = false}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+        action: offerSettings
+            ? SnackBarAction(
+                label: 'Settings',
+                onPressed: () => Geolocator.openAppSettings(),
+              )
+            : null,
+      ),
+    );
+  }
+
+  // ── Camera ─────────────────────────────────────────────────────────────────
+
+  /// Centers on the user's region if known, otherwise the national overview.
+  /// No-op until the map has been laid out; `onMapReady` calls it again.
+  void _recenter() {
+    if (!_mapReady || !mounted) return;
+    if (_hasLocation) {
+      _centerOn1200Miles(_currentLocation);
+    } else {
+      _mapController.move(_usaCenter, _usaOverviewZoom);
     }
   }
 
   void _centerOn1200Miles(LatLng center) {
+    if (!_mapReady) return;
     // 1200 miles span = 600 miles radius from center
     // 1 deg latitude ≈ 69.0 miles
     final dLat = 600.0 / 69.0;
@@ -177,12 +281,6 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
           _allHospitals = hospitals;
           _allGroups = groups;
           _isLoading = false;
-        });
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            _centerOn1200Miles(_currentLocation);
-          }
         });
       }
     } catch (e) {
@@ -233,14 +331,12 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (sheetCtx, setSheetState) {
-            return DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.45,
-              minChildSize: 0.3,
-              maxChildSize: 0.85,
-              builder: (_, scrollController) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.45,
+          minChildSize: 0.3,
+          maxChildSize: 0.85,
+          builder: (_, scrollController) {
             return Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
               child: ListView(
@@ -371,81 +467,31 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                   ),
                   const SizedBox(height: 8),
                   ...group.hospitals.map((h) {
-                    final isHome = _savedCenterCode == h.code;
                     return Card(
                       elevation: 0,
                       margin: const EdgeInsets.symmetric(vertical: 4),
                       color: cs.surfaceContainerHighest.withAlpha(60),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
-                        side: BorderSide(
-                          color: isHome ? cs.primary : cs.outlineVariant.withAlpha(100),
-                          width: isHome ? 1.5 : 1.0,
-                        ),
+                        side: BorderSide(color: cs.outlineVariant.withAlpha(100)),
                       ),
                       child: ListTile(
                         dense: true,
-                        leading: isHome
-                            ? Tooltip(
-                                message: 'My Saved Transplant Center',
-                                child: Icon(Icons.star, color: cs.primary, size: 22),
-                              )
-                            : null,
-                        title: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                h.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 13),
-                              ),
-                            ),
-                            if (isHome)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: cs.primary.withAlpha(30),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text('My Center',
-                                    style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: cs.primary)),
-                              ),
-                          ],
+                        title: Text(
+                          h.name,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w600, fontSize: 13),
                         ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Code: ${h.code} • Cohort: ${h.cohortBeginDate} – ${h.cohortEndDate}',
-                              style: const TextStyle(fontSize: 11),
-                            ),
-                            const SizedBox(height: 4),
-                            TextButton.icon(
-                              style: TextButton.styleFrom(
-                                padding: EdgeInsets.zero,
-                                minimumSize: const Size(50, 24),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              icon: Icon(isHome ? Icons.check : Icons.star_border, size: 14),
-                              label: Text(
-                                isHome ? 'Saved as My Center' : 'Set as My Transplant Center',
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                              onPressed: () async {
-                                await _service.saveCenter(isHome ? null : h);
-                                final updated = await _service.getSavedCenter();
-                                if (mounted) {
-                                  setState(() => _savedCenterCode = updated?.code);
-                                  setSheetState(() {});
-                                }
-                              },
-                            ),
-                          ],
+                        subtitle: Text(
+                          'Code: ${h.code} • Cohort: ${h.cohortBeginDate} – ${h.cohortEndDate}',
+                          style: const TextStyle(fontSize: 11),
                         ),
                         trailing: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: MmatHeatmapView.getScoreColor(h.medianMeld).withAlpha(40),
+                            color: MmatHeatmapView.getScoreColor(h.medianMeld)
+                                .withAlpha(40),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -465,13 +511,11 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
           },
         );
       },
-    );
-  },
-).whenComplete(() {
-  if (mounted) {
-    setState(() => _selectedGroup = null);
-  }
-});
+    ).whenComplete(() {
+      if (mounted) {
+        setState(() => _selectedGroup = null);
+      }
+    });
   }
 
   void _showHospitalSearch() {
@@ -568,7 +612,7 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final brightness = Theme.of(context).brightness;
 
     return Scaffold(
       appBar: AppBar(
@@ -583,45 +627,28 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
             tooltip: 'Search hospitals or cities',
             onPressed: _allHospitals.isEmpty ? null : _showHospitalSearch,
           ),
-          PopupMenuButton<String>(
+          PopupMenuButton<BasemapStyle>(
             icon: const Icon(Icons.layers_outlined),
-            tooltip: 'Google Maps Layer',
-            onSelected: (type) => setState(() => _mapType = type),
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'm',
-                child: Row(
-                  children: [
-                    Icon(_mapType == 'm' ? Icons.check : Icons.map_outlined,
-                        size: 18, color: const Color(0xFF007AFF)),
-                    const SizedBox(width: 8),
-                    const Text('Google Roadmap'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'p',
-                child: Row(
-                  children: [
-                    Icon(_mapType == 'p' ? Icons.check : Icons.terrain_outlined,
-                        size: 18, color: const Color(0xFF007AFF)),
-                    const SizedBox(width: 8),
-                    const Text('Google Terrain'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'y',
-                child: Row(
-                  children: [
-                    Icon(_mapType == 'y' ? Icons.check : Icons.satellite_alt_outlined,
-                        size: 18, color: const Color(0xFF007AFF)),
-                    const SizedBox(width: 8),
-                    const Text('Google Satellite (Hybrid)'),
-                  ],
-                ),
-              ),
-            ],
+            tooltip: 'Map Style',
+            onSelected: (style) => setState(() => _basemapStyle = style),
+            itemBuilder: (context) => BasemapStyle.values
+                .map(
+                  (style) => PopupMenuItem<BasemapStyle>(
+                    value: style,
+                    child: Row(
+                      children: [
+                        Icon(
+                          _basemapStyle == style ? Icons.check : style.icon,
+                          size: 18,
+                          color: const Color(0xFF007AFF),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(style.label),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
           ),
           IconButton(
             icon: const Icon(Icons.info_outline),
@@ -658,22 +685,27 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                     FlutterMap(
                       mapController: _mapController,
                       options: MapOptions(
-                        initialCenter: _currentLocation,
-                        initialZoom: _initialZoom,
+                        initialCenter:
+                            _hasLocation ? _currentLocation : _usaCenter,
+                        initialZoom:
+                            _hasLocation ? _initialZoom : _usaOverviewZoom,
                         minZoom: 3.0,
                         maxZoom: 16.0,
+                        onMapReady: () {
+                          _mapReady = true;
+                          _recenter();
+                        },
+                        onPositionChanged: (camera, hasGesture) {
+                          if (hasGesture) _userMovedMap = true;
+                        },
                       ),
                       children: [
-                        // Google Maps Map Tiles / Basemap Layer
+                        // CARTO basemap (OpenStreetMap data)
                         TileLayer(
-                          urlTemplate: _googleMapsApiKey.isNotEmpty
-                              ? 'https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?key=$_googleMapsApiKey'
-                              : 'https://mt{s}.google.com/vt/lyrs=$_mapType&x={x}&y={y}&z={z}',
-                          subdomains: const ['0', '1', '2', '3'],
+                          urlTemplate: MapTilesConfig.urlTemplate(
+                              _basemapStyle, brightness),
+                          retinaMode: RetinaMode.isHighDensity(context),
                           userAgentPackageName: 'com.bookmarc.meldcalculator',
-                          tileBuilder: (isDark && _mapType == 'm')
-                              ? darkModeTileBuilder
-                              : null,
                         ),
 
                         // 150 Nautical Mile Radius Heatmap Layer
@@ -824,23 +856,22 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
 
                     // Bottom Floating Legend
                     Positioned(
-                      bottom: 16,
+                      bottom: 36,
                       left: 16,
                       child: _buildLegendCard(cs),
                     ),
 
                     // Bottom-Right Quick Action FABs
                     Positioned(
-                      bottom: 16,
+                      bottom: 36,
                       right: 16,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           FloatingActionButton.small(
                             heroTag: 'recenter_loc',
-                            tooltip: 'Center Current Location (1200 mi)',
-                            onPressed: () =>
-                                _centerOn1200Miles(_currentLocation),
+                            tooltip: 'Center on My Location (1200 mi)',
+                            onPressed: _onMyLocationPressed,
                             child: const Icon(Icons.my_location),
                           ),
                           const SizedBox(height: 8),
@@ -878,8 +909,48 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                         ],
                       ),
                     ),
+
+                    // Map data attribution (required by OpenStreetMap and
+                    // CARTO; must stay visible)
+                    Positioned(
+                      bottom: 6,
+                      right: 8,
+                      child: _buildAttribution(cs),
+                    ),
                   ],
                 ),
+    );
+  }
+
+  Widget _buildAttribution(ColorScheme cs) {
+    final style = TextStyle(fontSize: 10, color: cs.onSurface.withAlpha(200));
+    final linkStyle = style.copyWith(decoration: TextDecoration.underline);
+    Widget link(String text, Uri uri) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => launchUrl(uri, mode: LaunchMode.externalApplication),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: Text(text, style: linkStyle),
+          ),
+        );
+    return Semantics(
+      label: 'Map data © OpenStreetMap contributors, © CARTO',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        decoration: BoxDecoration(
+          color: cs.surface.withAlpha(210),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('© ', style: style),
+            link('OpenStreetMap contributors', MapTilesConfig.osmCopyrightUri),
+            Text('  © ', style: style),
+            link('CARTO', MapTilesConfig.cartoAttributionUri),
+          ],
+        ),
+      ),
     );
   }
 

@@ -108,6 +108,10 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   Timer? inactivityTimer;
 
+  /// Installed app version (CFBundleShortVersionString / versionName), read at
+  /// runtime so the UI never drifts from pubspec.yaml. Empty until loaded.
+  String _appVersion = '';
+
   // Results calculated via MeldCalculator model
   MeldResult _result = const MeldResult(
     meld: 0,
@@ -168,16 +172,26 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
     _setupListeners();
     _calculateMELD();
+    _loadAppVersion();
     WidgetsBinding.instance.addPostFrameCallback((_) => _showDisclaimerIfNeeded());
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted && info.version.isNotEmpty) {
+        setState(() => _appVersion = info.version);
+      }
+    } catch (_) {
+      // Platform info unavailable (e.g. tests): version label is omitted.
+    }
   }
 
   void _openMmatMap() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => MmatHeatmapView(
-          patientScore: meld3,
-        ),
+        builder: (_) => const MmatHeatmapView(),
       ),
     );
   }
@@ -1006,7 +1020,9 @@ class _MyHomePageState extends State<MyHomePage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Version 3.3.0  •  MMaT Cohort',
+                                _appVersion.isEmpty
+                                    ? 'MMaT Cohort'
+                                    : 'Version $_appVersion  •  MMaT Cohort',
                                 style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
@@ -1155,7 +1171,7 @@ class _MyHomePageState extends State<MyHomePage> {
     String? appStoreVersion;
     String? trackViewUrl;
     String? releaseNotes;
-    String installedVersion = '3.3.0';
+    String installedVersion = _appVersion;
 
     try {
       // 1. Check OPTN MMaT GitHub Sync with timeout (force: false)
@@ -1176,7 +1192,7 @@ class _MyHomePageState extends State<MyHomePage> {
       try {
         final info = await PackageInfo.fromPlatform()
             .timeout(const Duration(seconds: 3));
-        installedVersion = info.version.isNotEmpty ? info.version : '3.3.0';
+        if (info.version.isNotEmpty) installedVersion = info.version;
       } catch (_) {}
 
       try {
@@ -1208,7 +1224,9 @@ class _MyHomePageState extends State<MyHomePage> {
 
     if (!mounted) return;
 
+    // Without a known installed version, don't claim an update is available.
     final isNewerApp = appStoreVersion != null &&
+        installedVersion.isNotEmpty &&
         MmatDataService.isVersionNewer(appStoreVersion, installedVersion);
 
     showDialog<void>(

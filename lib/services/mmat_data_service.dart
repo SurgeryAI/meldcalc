@@ -130,7 +130,6 @@ class MmatDataService {
 
   static const String _defaultRemoteManifestUrl =
       'https://raw.githubusercontent.com/SurgeryAI/meldcalc/main/assets/mmat_manifest.json';
-  static const String _prefSavedCenterCode = 'user_home_hospital_code';
   static const String _prefActiveVersionKey = 'mmat_active_cohort_version';
 
   static const String _cachedManifestFilename = 'mmat_manifest_cached.json';
@@ -503,26 +502,6 @@ class MmatDataService {
       max: maxScore,
       average: total / hospitals.length,
     );
-  }
-
-  // ── User's Home Center Persistence ─────────────────────────────────────────
-
-  /// Loads the clinician's preferred/home transplant center if previously saved.
-  Future<MmatHospital?> getSavedCenter() async {
-    final prefs = await SharedPreferences.getInstance();
-    final code = prefs.getString(_prefSavedCenterCode);
-    if (code == null || code.isEmpty) return null;
-    return findHospitalByCode(code);
-  }
-
-  /// Saves or clears the clinician's preferred/home transplant center.
-  Future<void> saveCenter(MmatHospital? hospital) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (hospital == null) {
-      await prefs.remove(_prefSavedCenterCode);
-    } else {
-      await prefs.setString(_prefSavedCenterCode, hospital.code);
-    }
   }
 
   /// Finds a specific donor hospital by its OPTN code.

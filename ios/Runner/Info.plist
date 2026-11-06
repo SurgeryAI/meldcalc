@@ -19,7 +19,7 @@
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
-		<string>3.3.0</string>
+		<string>$(FLUTTER_BUILD_NAME)</string>
 		<key>CFBundleSignature</key>
 		<string>????</string>
 		<key>CFBundleVersion</key>
@@ -28,6 +28,8 @@
 		<false/>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Your location is used only to center the MMaT map on your region. It stays on your device and is not shared.</string>
 		<key>UIApplicationSceneManifest</key>
 		<dict>
 			<key>UIApplicationSupportsMultipleScenes</key>
