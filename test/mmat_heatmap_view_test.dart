@@ -15,8 +15,9 @@ void main() {
     // Verify app bar title
     expect(find.text('Regional MMaT Heatmap'), findsOneWidget);
 
-    // Verify search and info action icons
+    // Verify search, layer selector, and info action icons
     expect(find.byIcon(Icons.search), findsOneWidget);
+    expect(find.byIcon(Icons.layers_outlined), findsOneWidget);
     expect(find.byIcon(Icons.info_outline), findsOneWidget);
   });
 }

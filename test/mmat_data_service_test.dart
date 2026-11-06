@@ -36,4 +36,21 @@ void main() {
     expect(stats.max <= 40, true);
     expect(stats.average > 20, true);
   });
+
+  test('isVersionNewer handles semantic and cohort version comparisons accurately', () {
+    // Two-digit vs single-digit month (lexicographical comparison would fail this)
+    expect(MmatDataService.isVersionNewer('2025.10', '2025.9'), isTrue);
+    expect(MmatDataService.isVersionNewer('2025.9', '2025.10'), isFalse);
+
+    // Standard semver
+    expect(MmatDataService.isVersionNewer('3.0.2', '3.0.1'), isTrue);
+    expect(MmatDataService.isVersionNewer('3.1.0', '3.0.1'), isTrue);
+    expect(MmatDataService.isVersionNewer('4.0.0', '3.9.9'), isTrue);
+    expect(MmatDataService.isVersionNewer('3.0.1', '3.0.1'), isFalse);
+    expect(MmatDataService.isVersionNewer('2.9.0', '3.0.1'), isFalse);
+
+    // With prefixes and build metadata
+    expect(MmatDataService.isVersionNewer('v3.0.2', '3.0.1'), isTrue);
+    expect(MmatDataService.isVersionNewer('3.0.1+2', '3.0.1+1'), isTrue);
+  });
 }

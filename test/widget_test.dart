@@ -6,6 +6,7 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -51,5 +52,42 @@ void main() {
     // Verify that lab field labels are present.
     expect(find.text('Cr mg/dL'), findsOneWidget);
     expect(find.text('TB mg/dL'), findsOneWidget);
+  });
+
+  testWidgets('Invalid input restores previous valid value on blur', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({'disclaimer_shown': true});
+
+    final testUpgrader = Upgrader(
+      client: MockClient((_) async => http.Response(jsonEncode({'resultCount': 0, 'results': []}), 200)),
+      upgraderOS: MockUpgraderOS(ios: true),
+    )..installPackageInfo(
+        packageInfo: PackageInfo(
+          appName: 'MELD 3.0 Calc',
+          packageName: 'com.bookmarc.meldcalculator',
+          version: '1.0.0',
+          buildNumber: '1',
+        ),
+      );
+
+    await tester.pumpWidget(MyApp(upgrader: testUpgrader));
+    await tester.pumpAndSettle();
+
+    // Find Creatinine field (initial value 1.0)
+    final crFinder = find.widgetWithText(TextFormField, '1.0').first;
+    expect(crFinder, findsOneWidget);
+
+    // Tap to focus and enter invalid text "."
+    await tester.tap(crFinder);
+    await tester.pump();
+    await tester.enterText(crFinder, '.');
+    await tester.pump();
+
+    // Unfocus by tapping outside the input fields inside the body
+    await tester.tap(find.text('Orig MELD'));
+    await tester.pumpAndSettle();
+
+    // Field should safely restore the valid fallback value rather than staying "."
+    expect(find.text('.'), findsNothing);
+    expect(find.widgetWithText(TextFormField, '1.0'), findsWidgets);
   });
 }

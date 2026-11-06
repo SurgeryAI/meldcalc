@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:csv/csv.dart';
@@ -200,10 +201,7 @@ class MmatDataService {
     }
 
     // 4. Parse CSV rows
-    final List<List<dynamic>> rows = const CsvToListConverter(
-      eol: '\n',
-      shouldParseNumbers: false,
-    ).convert(csvString);
+    final List<List<dynamic>> rows = Csv(dynamicTyping: false).decode(csvString);
 
     if (rows.isEmpty) {
       _cachedHospitals = [];
@@ -291,9 +289,9 @@ class MmatDataService {
     String? customManifestUrl,
   }) async {
     final manifestUrl = customManifestUrl ?? _activeManifest?.manifestUrl ?? _defaultRemoteManifestUrl;
+    final client = http.Client();
 
     try {
-      final client = http.Client();
       final manifestUri = Uri.parse(manifestUrl);
 
       final manifestResp = await client.get(manifestUri).timeout(const Duration(seconds: 6));
@@ -307,7 +305,7 @@ class MmatDataService {
       }
 
       final remoteManifest = MmatManifest.fromJson(jsonDecode(manifestResp.body));
-      final bool isNewer = _isVersionNewer(remoteManifest.cohortVersion, activeCohortVersion);
+      final bool isNewer = isVersionNewer(remoteManifest.cohortVersion, activeCohortVersion);
 
       if (!isNewer && !force) {
         return MmatSyncResult(
@@ -374,6 +372,8 @@ class MmatDataService {
         message: 'Sync error: $e',
         activeCohortVersion: activeCohortVersion,
       );
+    } finally {
+      client.close();
     }
   }
 
@@ -401,9 +401,30 @@ class MmatDataService {
     await loadHospitals(forceReload: true);
   }
 
-  bool _isVersionNewer(String remote, String local) {
+  /// Compares two version strings numerically (supports semantic versions, year.month, and build numbers).
+  static bool isVersionNewer(String remote, String local) {
     if (remote == local) return false;
-    return remote.compareTo(local) > 0;
+    final rParts = remote.replaceAll(RegExp(r'^[vV]'), '').split(RegExp(r'[\.\-\+]'));
+    final lParts = local.replaceAll(RegExp(r'^[vV]'), '').split(RegExp(r'[\.\-\+]'));
+
+    final maxLen = max(rParts.length, lParts.length);
+    for (int i = 0; i < maxLen; i++) {
+      final rStr = i < rParts.length ? rParts[i] : '0';
+      final lStr = i < lParts.length ? lParts[i] : '0';
+
+      final rNum = int.tryParse(rStr);
+      final lNum = int.tryParse(lStr);
+
+      if (rNum != null && lNum != null) {
+        if (rNum > lNum) return true;
+        if (rNum < lNum) return false;
+      } else {
+        final cmp = rStr.compareTo(lStr);
+        if (cmp > 0) return true;
+        if (cmp < 0) return false;
+      }
+    }
+    return false;
   }
 
   void _buildGroups(List<MmatHospital> hospitals) {

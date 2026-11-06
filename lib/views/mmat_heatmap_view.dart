@@ -39,6 +39,13 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
   final MapController _mapController = MapController();
   final MmatDataService _service = MmatDataService.instance;
 
+  // Google Maps tile configuration
+  static const String _googleMapsApiKey =
+      String.fromEnvironment('GOOGLE_MAPS_API_KEY', defaultValue: '');
+
+  // Google Maps layer type: 'm' = Roadmap, 'p' = Terrain, 'y' = Hybrid (Satellite + labels)
+  String _mapType = 'm';
+
   List<MmatHospital> _allHospitals = [];
   List<MmatLocationGroup> _allGroups = [];
   bool _isLoading = true;
@@ -97,11 +104,12 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
           final target = hospitals.where((h) => h.code == targetCode).firstOrNull;
           if (target != null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
               _flyTo(target.latitude, target.longitude, 8.5);
               final group = groups.where((g) =>
                 (g.latitude - target.latitude).abs() < 0.05 &&
                 (g.longitude - target.longitude).abs() < 0.05).firstOrNull;
-              if (group != null) {
+              if (group != null && mounted) {
                 setState(() => _selectedGroup = group);
               }
             });
@@ -118,28 +126,13 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
     }
   }
 
-  /// Temperature color scale: hotter colors represent higher MMaT scores
-  static Color getScoreColor(int score) {
-    if (score >= 34) {
-      return const Color(0xFFC62828); // Crimson Red (34+)
-    } else if (score >= 32) {
-      return const Color(0xFFFF7043); // Coral / Orange (32-33)
-    } else if (score == 31) {
-      return const Color(0xFFFBC02D); // Gold / Yellow (31 National Median)
-    } else if (score == 30) {
-      return const Color(0xFF00897B); // Medical Teal (30)
-    } else {
-      return const Color(0xFF1976D2); // Cool Blue (<= 29)
-    }
-  }
-
   Color _getDisplayColor(int mmatScore) {
     if (_patientCompareMode && widget.patientScore != null) {
       return widget.patientScore! >= mmatScore
           ? const Color(0xFF2E7D32) // Competitive (Green)
           : const Color(0xFFE65100); // Below MMaT (Orange)
     }
-    return getScoreColor(mmatScore);
+    return MmatHeatmapView.getScoreColor(mmatScore);
   }
 
   List<MmatLocationGroup> get _filteredGroups {
@@ -160,7 +153,7 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
 
   void _showHospitalDetailsSheet(MmatLocationGroup group) {
     final cs = Theme.of(context).colorScheme;
-    final color = getScoreColor(group.representativeScore);
+    final color = MmatHeatmapView.getScoreColor(group.representativeScore);
     final diffFromNational = group.representativeScore - _nationalMedian;
     final diffStr = diffFromNational > 0
         ? '+$diffFromNational above national median ($_nationalMedian)'
@@ -168,7 +161,7 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
             ? '$diffFromNational below national median ($_nationalMedian)'
             : 'Equal to national median ($_nationalMedian)';
 
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: cs.surface,
@@ -176,12 +169,14 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.45,
-          minChildSize: 0.3,
-          maxChildSize: 0.85,
-          builder: (_, scrollController) {
+        return StatefulBuilder(
+          builder: (sheetCtx, setSheetState) {
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.45,
+              minChildSize: 0.3,
+              maxChildSize: 0.85,
+              builder: (_, scrollController) {
             return Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
               child: ListView(
@@ -384,13 +379,11 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                                 style: const TextStyle(fontSize: 11),
                               ),
                               onPressed: () async {
-                                final nav = Navigator.of(ctx);
                                 await _service.saveCenter(isHome ? null : h);
                                 final updated = await _service.getSavedCenter();
                                 if (mounted) {
                                   setState(() => _savedCenterCode = updated?.code);
-                                  nav.pop();
-                                  _showHospitalDetailsSheet(group);
+                                  setSheetState(() {});
                                 }
                               },
                             ),
@@ -399,14 +392,14 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                         trailing: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: getScoreColor(h.medianMeld).withAlpha(40),
+                            color: MmatHeatmapView.getScoreColor(h.medianMeld).withAlpha(40),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             '${h.medianMeld}',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: getScoreColor(h.medianMeld),
+                              color: MmatHeatmapView.getScoreColor(h.medianMeld),
                             ),
                           ),
                         ),
@@ -420,6 +413,12 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
         );
       },
     );
+  },
+).whenComplete(() {
+  if (mounted) {
+    setState(() => _selectedGroup = null);
+  }
+});
   }
 
   void _showHospitalSearch() {
@@ -531,6 +530,46 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
             tooltip: 'Search hospitals or cities',
             onPressed: _allHospitals.isEmpty ? null : _showHospitalSearch,
           ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.layers_outlined),
+            tooltip: 'Google Maps Layer',
+            onSelected: (type) => setState(() => _mapType = type),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'm',
+                child: Row(
+                  children: [
+                    Icon(_mapType == 'm' ? Icons.check : Icons.map_outlined,
+                        size: 18, color: const Color(0xFF007AFF)),
+                    const SizedBox(width: 8),
+                    const Text('Google Roadmap'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'p',
+                child: Row(
+                  children: [
+                    Icon(_mapType == 'p' ? Icons.check : Icons.terrain_outlined,
+                        size: 18, color: const Color(0xFF007AFF)),
+                    const SizedBox(width: 8),
+                    const Text('Google Terrain'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'y',
+                child: Row(
+                  children: [
+                    Icon(_mapType == 'y' ? Icons.check : Icons.satellite_alt_outlined,
+                        size: 18, color: const Color(0xFF007AFF)),
+                    const SizedBox(width: 8),
+                    const Text('Google Satellite (Hybrid)'),
+                  ],
+                ),
+              ),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.info_outline),
             tooltip: 'OPTN Policy Info',
@@ -572,12 +611,16 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                         maxZoom: 16.0,
                       ),
                       children: [
-                        // Map Tiles (OpenStreetMap CartoDB Positron / OSM)
+                        // Google Maps Map Tiles / Basemap Layer
                         TileLayer(
-                          urlTemplate: isDark
-                              ? 'https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
-                              : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'org.meld3.app',
+                          urlTemplate: _googleMapsApiKey.isNotEmpty
+                              ? 'https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?key=$_googleMapsApiKey'
+                              : 'https://mt{s}.google.com/vt/lyrs=$_mapType&x={x}&y={y}&z={z}',
+                          subdomains: const ['0', '1', '2', '3'],
+                          userAgentPackageName: 'com.bookmarc.meldcalculator',
+                          tileBuilder: (isDark && _mapType == 'm')
+                              ? darkModeTileBuilder
+                              : null,
                         ),
 
                         // 150 Nautical Mile Radius Heatmap Layer
@@ -602,8 +645,8 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                             markers: _filteredGroups.map((g) {
                               final color = _getDisplayColor(g.representativeScore);
                               final isSelected = _selectedGroup != null &&
-                                  _selectedGroup!.city == g.city &&
-                                  _selectedGroup!.state == g.state;
+                                  (_selectedGroup!.latitude - g.latitude).abs() < 0.001 &&
+                                  (_selectedGroup!.longitude - g.longitude).abs() < 0.001;
                               return Marker(
                                 point: LatLng(g.latitude, g.longitude),
                                 width: isSelected ? 38 : 32,
@@ -676,16 +719,16 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
                             _buildFilterChip(
                               label: 'MMaT ≥ 34 (High)',
                               selected: _scoreFilterMin == 34,
-                              onSelected: (_) =>
-                                  setState(() => _scoreFilterMin = 34),
+                              onSelected: (selected) =>
+                                  setState(() => _scoreFilterMin = selected ? 34 : 0),
                               badgeColor: const Color(0xFFD32F2F),
                             ),
                             const SizedBox(width: 8),
                             _buildFilterChip(
                               label: 'MMaT ≥ 31 (≥ National)',
                               selected: _scoreFilterMin == 31,
-                              onSelected: (_) =>
-                                  setState(() => _scoreFilterMin = 31),
+                              onSelected: (selected) =>
+                                  setState(() => _scoreFilterMin = selected ? 31 : 0),
                               badgeColor: const Color(0xFFFFA000),
                             ),
                             const SizedBox(width: 8),
@@ -804,9 +847,9 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    'MMaT Legend',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  Text(
+                    _patientCompareMode ? 'Patient vs MMaT' : 'MMaT Legend',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(width: 4),
                   Icon(
@@ -820,11 +863,16 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
             ),
             if (_isLegendExpanded) ...[
               const SizedBox(height: 6),
-              _buildLegendRow('≥ 34', 'Very High', const Color(0xFFC62828)),
-              _buildLegendRow('32–33', 'High', const Color(0xFFFF7043)),
-              _buildLegendRow('31', 'National Median', const Color(0xFFFBC02D)),
-              _buildLegendRow('30', 'Moderate', const Color(0xFF00897B)),
-              _buildLegendRow('< 30', 'Lower', const Color(0xFF1976D2)),
+              if (_patientCompareMode && widget.patientScore != null) ...[
+                _buildLegendRow('≥ MMaT', 'Competitive (≥ ${widget.patientScore})', const Color(0xFF2E7D32)),
+                _buildLegendRow('< MMaT', 'Below MMaT (< ${widget.patientScore})', const Color(0xFFE65100)),
+              ] else ...[
+                _buildLegendRow('≥ 34', 'Very High', const Color(0xFFC62828)),
+                _buildLegendRow('32–33', 'High', const Color(0xFFFF7043)),
+                _buildLegendRow('31', 'National Median', const Color(0xFFFBC02D)),
+                _buildLegendRow('30', 'Moderate', const Color(0xFF00897B)),
+                _buildLegendRow('< 30', 'Lower', const Color(0xFF1976D2)),
+              ],
               const SizedBox(height: 4),
               Text(
                 'Radius: 150 NM',
@@ -915,7 +963,7 @@ class _HospitalSearchDelegate extends SearchDelegate<MmatHospital?> {
       itemCount: results.length,
       itemBuilder: (ctx, i) {
         final h = results[i];
-        final color = _MmatHeatmapViewState.getScoreColor(h.medianMeld);
+        final color = MmatHeatmapView.getScoreColor(h.medianMeld);
         return ListTile(
           dense: true,
           title: Text(h.name, style: const TextStyle(fontWeight: FontWeight.w600)),

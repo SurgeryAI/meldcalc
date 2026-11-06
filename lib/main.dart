@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:upgrader/upgrader.dart';
@@ -70,9 +71,9 @@ class MyApp extends StatelessWidget {
         dialogStyle: UpgradeDialogStyle.cupertino,
         upgrader: upgrader ??
             Upgrader(
-              durationUntilAlertAgain: Duration.zero,
+              durationUntilAlertAgain: const Duration(days: 1),
               countryCode: 'US',
-              debugLogging: true,
+              debugLogging: kDebugMode,
             ),
         barrierDismissible: true,
         showLater: true,
@@ -187,6 +188,7 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
       ),
     );
+    if (!mounted) return;
     _loadHomeCenter();
   }
 
@@ -198,9 +200,13 @@ class _MyHomePageState extends State<MyHomePage> {
       delegate: _HospitalPickerSearchDelegate(
         hospitals: hospitals,
         currentCode: _homeCenter?.code,
+        onClear: () async {
+          await MmatDataService.instance.saveCenter(null);
+          if (mounted) _loadHomeCenter();
+        },
         onSelected: (h) async {
           await MmatDataService.instance.saveCenter(h);
-          _loadHomeCenter();
+          if (mounted) _loadHomeCenter();
         },
       ),
     );
@@ -276,8 +282,11 @@ class _MyHomePageState extends State<MyHomePage> {
         controller.text = '';
         inactivityTimer?.cancel();
       } else {
-        if (controller.text.isEmpty) {
+        final parsed = double.tryParse(controller.text);
+        if (controller.text.isEmpty || parsed == null || !parsed.isFinite) {
           controller.text = getTemp();
+        } else {
+          setTemp(controller.text);
         }
         _startInactivityTimer();
       }
@@ -291,7 +300,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _startInactivityTimer() {
     inactivityTimer?.cancel();
-    inactivityTimer = Timer(const Duration(milliseconds: 1500), () {
+    inactivityTimer = Timer(const Duration(milliseconds: 3000), () {
       if (_isCurrentValueInRange()) {
         FocusManager.instance.primaryFocus?.unfocus();
       }
@@ -402,19 +411,9 @@ class _MyHomePageState extends State<MyHomePage> {
     return Scaffold(
       backgroundColor: cs.surface,
       appBar: AppBar(
-        title: Row(
-          children: [
-            const _LiverLogo(size: 26),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                widget.title,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
+        title: Text(
+          widget.title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -443,29 +442,34 @@ class _MyHomePageState extends State<MyHomePage> {
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 2),
-              _buildResultsSection(context),
-              const SizedBox(height: 6),
-              _buildSurvivalSection(context),
-              const SizedBox(height: 6),
-              _buildMmatSection(context),
-              const SizedBox(height: 6),
-              _buildInputSection(context),
-              const SizedBox(height: 4),
-              Center(
-                child: Text(
-                  'Calculations adjust based on current clinical standards.',
-                  style: TextStyle(fontSize: 9, color: cs.onSurfaceVariant.withAlpha(120)),
-                  textAlign: TextAlign.center,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusScope.of(context).unfocus(),
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 2),
+                _buildResultsSection(context),
+                const SizedBox(height: 6),
+                _buildSurvivalSection(context),
+                const SizedBox(height: 6),
+                _buildInputSection(context),
+                const SizedBox(height: 8),
+                _buildMmatSection(context),
+                const SizedBox(height: 6),
+                Center(
+                  child: Text(
+                    'Calculations adjust based on current clinical standards.',
+                    style: TextStyle(fontSize: 9, color: cs.onSurfaceVariant.withAlpha(120)),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-            ],
+                const SizedBox(height: 12),
+              ],
+            ),
           ),
         ),
       ),
@@ -474,72 +478,334 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Widget _buildMmatSection(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final mmat = _homeCenter?.medianMeld ?? 31;
-    final centerLabel = _homeCenter != null
-        ? '${_homeCenter!.city}, ${_homeCenter!.state}'
-        : 'National MMaT';
-    final delta = meld3 - mmat;
-    final deltaStr = delta >= 0 ? '+$delta' : '$delta';
+    final hasCenter = _homeCenter != null;
+    final exceptionScore = mmat - 3;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF007AFF).withAlpha(14),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF007AFF).withAlpha(40)),
+        color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasCenter
+              ? const Color(0xFF007AFF).withAlpha(100)
+              : cs.outlineVariant.withAlpha(80),
+          width: hasCenter ? 1.5 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(isDark ? 30 : 10),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Row(
-        children: [
-          const Icon(CupertinoIcons.location_solid,
-              size: 13, color: Color(0xFF007AFF)),
-          const SizedBox(width: 5),
-          Expanded(
-            child: GestureDetector(
-              onTap: _showCenterPicker,
-              child: Text(
-                '$centerLabel: $mmat (diff $deltaStr) • Exc: ${mmat - 3}',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF007AFF),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: _showCenterPicker,
-            child: Text(
-              'Change',
-              style: TextStyle(
-                fontSize: 10,
-                color: cs.onSurfaceVariant.withAlpha(180),
-                decoration: TextDecoration.underline,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: _openMmatMap,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(CupertinoIcons.map, size: 12, color: Color(0xFF007AFF)),
-                SizedBox(width: 2),
-                Text(
-                  'Map',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Row: Title & Map button
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF007AFF).withAlpha(22),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    CupertinoIcons.building_2_fill,
+                    size: 16,
                     color: Color(0xFF007AFF),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Donor Center MMaT',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: hasCenter
+                                  ? const Color(0xFF2E7D32).withAlpha(25)
+                                  : cs.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              hasCenter ? 'Local Cohort' : 'National Default',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                color: hasCenter
+                                    ? const Color(0xFF2E7D32)
+                                    : cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        '150 NM donor cohort benchmark for liver allocation',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: cs.onSurfaceVariant.withAlpha(180),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Regional Heatmap Button
+                InkWell(
+                  onTap: _openMmatMap,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF007AFF).withAlpha(16),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFF007AFF).withAlpha(40),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(CupertinoIcons.map,
+                            size: 12, color: Color(0xFF007AFF)),
+                        SizedBox(width: 4),
+                        Text(
+                          'Map',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF007AFF),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 10),
+
+            // Donor Center Search / Input Bar
+            InkWell(
+              onTap: _showCenterPicker,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? const Color(0xFF3A3A3C)
+                      : const Color(0xFFF2F2F7),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: hasCenter
+                        ? const Color(0xFF007AFF).withAlpha(80)
+                        : cs.outlineVariant.withAlpha(60),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      hasCenter
+                          ? CupertinoIcons.check_mark_circled_solid
+                          : CupertinoIcons.search,
+                      size: 16,
+                      color: hasCenter
+                          ? const Color(0xFF007AFF)
+                          : cs.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: hasCenter
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _homeCenter!.name,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  '${_homeCenter!.city}, ${_homeCenter!.state}  •  OPTN Code: ${_homeCenter!.code}',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Text(
+                              'Enter or select donor hospital...',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: cs.onSurfaceVariant.withAlpha(160),
+                              ),
+                            ),
+                    ),
+                    if (hasCenter) ...[
+                      GestureDetector(
+                        onTap: () async {
+                          await MmatDataService.instance.saveCenter(null);
+                          if (mounted) _loadHomeCenter();
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(
+                            CupertinoIcons.clear_circled_solid,
+                            size: 16,
+                            color: cs.onSurfaceVariant.withAlpha(180),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                    ],
+                    Text(
+                      hasCenter ? 'Change' : 'Select',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF007AFF),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Metrics Badges Row: MMaT Score & Standard Exception Benchmark
+            Row(
+              children: [
+                // Local or National MMaT
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: hasCenter
+                          ? const Color(0xFF007AFF).withAlpha(16)
+                          : cs.surfaceContainerHighest.withAlpha(120),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hasCenter ? 'DONOR MMaT' : 'NATIONAL MMaT',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                            color: hasCenter
+                                ? const Color(0xFF007AFF)
+                                : cs.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text(
+                              '$mmat',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: hasCenter
+                                    ? const Color(0xFF007AFF)
+                                    : cs.onSurface,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Median',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Standard Exception Benchmark (MMaT - 3)
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8E44AD).withAlpha(16),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'STANDARD EXCEPTION',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                            color: Color(0xFF8E44AD),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text(
+                              '$exceptionScore',
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF8E44AD),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'MMaT − 3',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -992,7 +1258,7 @@ class _MyHomePageState extends State<MyHomePage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Version 3.0.1  •  MMaT Cohort',
+                                'Version 3.3.0  •  MMaT Cohort',
                                 style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
@@ -1126,11 +1392,11 @@ class _MyHomePageState extends State<MyHomePage> {
     String? appStoreVersion;
     String? trackViewUrl;
     String? releaseNotes;
+    String installedVersion = '3.3.0';
     try {
       final info = await PackageInfo.fromPlatform();
-      final bundleId = info.packageName.isNotEmpty
-          ? info.packageName
-          : 'com.bookmarc.meldcalculator';
+      installedVersion = info.version.isNotEmpty ? info.version : '3.3.0';
+      final bundleId = 'com.bookmarc.meldcalculator';
       final response = await http
           .get(Uri.parse(
               'https://itunes.apple.com/lookup?bundleId=$bundleId&country=US'))
@@ -1148,7 +1414,8 @@ class _MyHomePageState extends State<MyHomePage> {
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
 
-    final isNewerApp = appStoreVersion != null && appStoreVersion != '3.0.1';
+    final isNewerApp = appStoreVersion != null &&
+        MmatDataService.isVersionNewer(appStoreVersion, installedVersion);
 
     showDialog(
       context: context,
@@ -1190,8 +1457,8 @@ class _MyHomePageState extends State<MyHomePage> {
             const SizedBox(height: 2),
             Text(
               isNewerApp
-                  ? 'New version available: v$appStoreVersion (Installed: v3.0.1)'
-                  : 'Installed: v3.0.1 (Up to date)',
+                  ? 'New version available: v$appStoreVersion (Installed: v$installedVersion)'
+                  : 'Installed: v$installedVersion (Up to date)',
               style: TextStyle(
                   fontSize: 12,
                   fontWeight:
@@ -1315,11 +1582,13 @@ class _LiverPainter extends CustomPainter {
 class _HospitalPickerSearchDelegate extends SearchDelegate<MmatHospital?> {
   final List<MmatHospital> hospitals;
   final String? currentCode;
+  final VoidCallback? onClear;
   final ValueChanged<MmatHospital> onSelected;
 
   _HospitalPickerSearchDelegate({
     required this.hospitals,
     this.currentCode,
+    this.onClear,
     required this.onSelected,
   }) : super(searchFieldLabel: 'Search hospital, city, or state...');
 
@@ -1354,9 +1623,27 @@ class _HospitalPickerSearchDelegate extends SearchDelegate<MmatHospital?> {
             .take(50)
             .toList();
 
+    final showClearOption = currentCode != null && q.isEmpty;
+    final totalCount = results.length + (showClearOption ? 1 : 0);
+
     return ListView.builder(
-      itemCount: results.length,
-      itemBuilder: (ctx, i) {
+      itemCount: totalCount,
+      itemBuilder: (ctx, index) {
+        if (showClearOption && index == 0) {
+          return ListTile(
+            dense: true,
+            leading: const Icon(Icons.clear, color: Colors.grey, size: 22),
+            title: const Text('Reset to National MMaT (31)',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text('Clear hospital-specific benchmark'),
+            onTap: () {
+              close(context, null);
+              onClear?.call();
+            },
+          );
+        }
+
+        final i = showClearOption ? index - 1 : index;
         final h = results[i];
         final isCurrent = h.code == currentCode;
         final color = MmatHeatmapView.getScoreColor(h.medianMeld);

@@ -106,17 +106,19 @@ class MeldCalculator {
     if (albAdjusted > 3.5) albAdjusted = 3.5;
 
     // Original MELD (Kamath PS, et al. Hepatology 2001)
-    final meldDouble = (3.78 * (log(tbAdjusted)) +
+    double meldDouble = (3.78 * (log(tbAdjusted)) +
         11.20 * (log(inrAdjusted)) +
         9.57 * (log(crAdjusted)) +
         6.43);
+    if (meldDouble.isNaN || meldDouble < 6) meldDouble = 6;
     final meld = meldDouble.round();
 
     // Na-MELD (Kim WR, et al. N Engl J Med 2008)
-    final nameld = (meldDouble +
+    double nameldDouble = (meldDouble +
             1.32 * (137 - naAdjusted) -
-            (0.033 * meldDouble * (137 - naAdjusted)))
-        .round();
+            (0.033 * meldDouble * (137 - naAdjusted)));
+    if (nameldDouble.isNaN || nameldDouble < 6) nameldDouble = 6;
+    final nameld = nameldDouble.round();
 
     // MELD 3.0 (Kim WR, et al. Gastroenterology 2021)
     double meld3Double = (4.56 * log(tbAdjusted) +
@@ -133,7 +135,7 @@ class MeldCalculator {
     }
 
     // Enforce OPTN minimum score floor of 6
-    if (meld3Double < 6) meld3Double = 6;
+    if (meld3Double.isNaN || meld3Double < 6) meld3Double = 6;
 
     final meld3 = meld3Double.round();
 
@@ -143,9 +145,9 @@ class MeldCalculator {
     // S0(30d) = 0.99701 corresponds to ~1.8% mortality at MELD 20.
     // S0(60d) = 0.99390 interpolated proportionally by cumulative hazard (H0(60) = 2/3 * H0(90)).
     final riskFactor = exp(0.18 * (meld3Double - 10));
-    final survival30 = pow(0.99701, riskFactor) * 100;
-    final survival60 = pow(0.99390, riskFactor) * 100;
-    final survival90 = pow(0.99086, riskFactor) * 100;
+    final survival30 = (pow(0.99701, riskFactor) * 100).toDouble().clamp(0.0, 100.0);
+    final survival60 = (pow(0.99390, riskFactor) * 100).toDouble().clamp(0.0, 100.0);
+    final survival90 = (pow(0.99086, riskFactor) * 100).toDouble().clamp(0.0, 100.0);
 
     return MeldResult(
       meld: meld,
