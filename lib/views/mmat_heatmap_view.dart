@@ -57,7 +57,7 @@ class _MmatHeatmapViewState extends State<MmatHeatmapView> {
 
   // View toggles
   bool _showRadiuses = true;
-  bool _showMarkers = true;
+  bool _showMarkers = false;
   int _scoreFilterMin = 0; // 0 = all
   bool _isLegendExpanded = true;
 
